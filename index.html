@@ -2351,7 +2351,7 @@
   <script>
     // CONFIG
     const ADMIN_PASSWORD = 'sharpedge';
-    const DATA_VERSION = 'v13'; // bump to force-reset localStorage on all browsers
+    const DATA_VERSION = 'v14'; // bump to force-reset localStorage on all browsers
 
     // SAMPLE DATA
     const SAMPLE_PICKS = [
@@ -3193,22 +3193,24 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
     function renderGameList(games, sport) {
       const list = document.getElementById('gamePickerList');
       if (!games || !games.length) {
-        list.innerHTML = '<div class="game-picker-empty">No ' + SPORT_CONFIG[sport].label + ' games today.</div>';
+        list.innerHTML = '<div style="text-align:center;color:#6b7280;padding:36px;font-size:14px;">No ' + SPORT_CONFIG[sport].label + ' games today.</div>';
         return;
       }
       const parlayIdxs = new Set(parlayLegs.map(l => l.idx));
       list.innerHTML = games.map((g, i) => {
         const inP = parlayIdxs.has(i);
-        const fn  = parlayMode ? 'toggleParlayLeg(' + i + ')' : 'selectGameByIdx(' + i + ')';
-        return '<div class="game-picker-card' + (inP ? ' parlay-selected' : '') + '" onclick="' + fn + '">'
-          + '<div>'
-          + '<div class="gpc-matchup">' + g.awayName + ' <span style="color:#6b7280;font-weight:400;">@</span> ' + g.homeName + '</div>'
-          + '<div class="gpc-time">' + g.time + (g.state !== 'pre' ? ' <span style="color:#f59e0b;">\u00b7 Live</span>' : '') + '</div>'
+        const cardBg     = inP ? 'rgba(0,232,122,0.1)' : 'rgba(255,255,255,0.04)';
+        const cardBorder = inP ? '1px solid rgba(0,232,122,0.5)' : '1px solid rgba(255,255,255,0.1)';
+        const btnLabel   = parlayMode ? (inP ? '&#10003; Added' : '+ Add') : 'Select &#8594;';
+        const btnBg      = inP ? 'rgba(0,232,122,0.25)' : 'rgba(0,232,122,0.12)';
+        const btnColor   = '#00e87a';
+        const fn         = parlayMode ? 'toggleParlayLeg(' + i + ')' : 'selectGameByIdx(' + i + ')';
+        return '<div style="display:flex;justify-content:space-between;align-items:center;background:' + cardBg + ';border:' + cardBorder + ';border-radius:10px;padding:12px 16px;margin-bottom:8px;cursor:pointer;" onclick="' + fn + '">'
+          + '<div style="flex:1;min-width:0;">'
+          + '<div style="font-size:14px;font-weight:600;color:#f9fafb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + g.awayName + ' <span style="color:#6b7280;">@</span> ' + g.homeName + '</div>'
+          + '<div style="font-size:12px;color:#6b7280;margin-top:3px;">' + g.time + (g.state !== 'pre' ? ' &middot; <span style="color:#f59e0b;">Live</span>' : '') + '</div>'
           + '</div>'
-          + '<div style="display:flex;align-items:center;gap:8px;">'
-          + (inP ? '<span style="font-size:11px;color:#00e87a;font-weight:700;">\u2713 Added</span>' : '')
-          + '<div class="sport-pill">' + SPORT_CONFIG[sport].label + '</div>'
-          + '</div>'
+          + '<button onclick="event.stopPropagation();' + fn + '" style="margin-left:12px;padding:6px 12px;background:' + btnBg + ';border:1px solid rgba(0,232,122,0.4);border-radius:8px;color:' + btnColor + ';font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">' + btnLabel + '</button>'
           + '</div>';
       }).join('');
     }
