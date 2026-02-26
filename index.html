@@ -1813,7 +1813,7 @@
           <span id="recordText">Season: 0W - 0L</span>
           <span id="recordUnits" style="margin-left:12px;font-size:13px;font-weight:700;color:#00e87a;"></span>
         </div>
-        <button class="btn-post-pick" id="btnPostPick" onclick="openPickComposer()">🎯 Post Pick</button>
+        <button class="btn-post-pick" id="btnPostPick" onclick="openGamePicker()">📅 Post Pick</button>
       </div>
 
       <div class="picks-grid" id="picksGrid">
@@ -2099,7 +2099,8 @@
   <!-- ADMIN FLOATING ACTION BUTTON -->
   <div class="admin-fab fab-hidden" id="adminFab">
     <div class="admin-fab-menu" id="adminFabMenu">
-      <div class="admin-fab-item" onclick="openPickComposer(); toggleFab()">🎯 Post New Pick</div>
+      <div class="admin-fab-item" onclick="openGamePicker(); toggleFab()">📅 Pick a Game</div>
+      <div class="admin-fab-item" onclick="openPickComposer(); toggleFab()">✏️ Manual Pick</div>
       <div class="admin-fab-item" onclick="openPostComposer(); toggleFab()">✏️ New Post</div>
       <div class="admin-fab-item" onclick="smoothScroll('#picks'); toggleFab()">📊 View All Picks</div>
     </div>
@@ -2271,7 +2272,7 @@
   <script>
     // CONFIG
     const ADMIN_PASSWORD = 'sharpedge';
-    const DATA_VERSION = 'v9'; // bump to force-reset localStorage on all browsers
+    const DATA_VERSION = 'v10'; // bump to force-reset localStorage on all browsers
 
     // SAMPLE DATA
     const SAMPLE_PICKS = [
@@ -3008,6 +3009,111 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
       window.location.href = `mailto:jonathanbruner04@gmail.com?subject=${subject}&body=${body}`;
     }
 
+
+    // ── GAME PICKER ──────────────────────────────────────────────────────────
+    const SPORT_CONFIG = {
+      nba: { label: 'NBA', espn: 'basketball/nba', abbr: 'NBA' },
+      nfl: { label: 'NFL', espn: 'football/nfl', abbr: 'NFL' },
+      nhl: { label: 'NHL', espn: 'hockey/nhl',   abbr: 'NHL' },
+      mlb: { label: 'MLB', espn: 'baseball/mlb', abbr: 'MLB' },
+    };
+    let pickerCache = {};
+    let currentPickerSport = 'nba';
+
+    function openGamePicker() {
+      if (!adminMode) { console.warn("[YFC] Admin access required."); return; }
+      document.getElementById('gamePickerModal').classList.add('active');
+      loadGamesForSport('nba');
+    }
+
+    function switchSport(sport, tabEl) {
+      currentPickerSport = sport;
+      document.querySelectorAll('.game-picker-tab').forEach(t => t.classList.remove('active'));
+      tabEl.classList.add('active');
+      loadGamesForSport(sport);
+    }
+
+    function loadGamesForSport(sport) {
+      const list = document.getElementById('gamePickerList');
+      if (pickerCache[sport]) {
+        renderGameList(pickerCache[sport], sport);
+        return;
+      }
+      list.innerHTML = '<div class="game-picker-loading">Loading ' + SPORT_CONFIG[sport].label + ' games...</div>';
+      const url = 'https://site.api.espn.com/apis/site/v2/sports/' + SPORT_CONFIG[sport].espn + '/scoreboard';
+      fetch(url)
+        .then(r => r.json())
+        .then(data => {
+          const games = parseESPNGames(data, sport);
+          pickerCache[sport] = games;
+          renderGameList(games, sport);
+        })
+        .catch(() => {
+          list.innerHTML = '<div class="game-picker-empty">Could not load ' + SPORT_CONFIG[sport].label + ' games. Try manual entry.</div>';
+        });
+    }
+
+    function parseESPNGames(data, sport) {
+      const events = data.events || [];
+      return events.map(e => {
+        const comp = e.competitions[0];
+        const teams = comp.competitors;
+        const away = teams.find(t => t.homeAway === 'away') || teams[0];
+        const home = teams.find(t => t.homeAway === 'home') || teams[1];
+        const awayAbbr = away.team.abbreviation;
+        const homeAbbr = home.team.abbreviation;
+        const awayName = away.team.shortDisplayName || away.team.displayName;
+        const homeName = home.team.shortDisplayName || home.team.displayName;
+        const detail = comp.status.type.shortDetail || '';
+        const state = comp.status.type.state || 'pre';
+        // Parse time into cleaner format
+        let timeStr = detail;
+        const timeMatch = detail.match(/(\d+:\d+\s*[AP]M\s*E[SD]T)/i);
+        if (timeMatch) timeStr = timeMatch[1].replace('EST','ET').replace('EDT','ET');
+        return {
+          sport,
+          awayAbbr, homeAbbr, awayName, homeName,
+          matchup: awayName + ' @ ' + homeName,
+          shortMatchup: awayAbbr + ' @ ' + homeAbbr,
+          gameInfo: awayAbbr + ' @ ' + homeAbbr + ' — ' + timeStr,
+          time: timeStr,
+          state,
+        };
+      });
+    }
+
+    function renderGameList(games, sport) {
+      const list = document.getElementById('gamePickerList');
+      if (!games.length) {
+        list.innerHTML = '<div class="game-picker-empty">No ' + SPORT_CONFIG[sport].label + ' games today.</div>';
+        return;
+      }
+      list.innerHTML = games.map((g, i) => `
+        <div class="game-picker-card" onclick="selectGame(${JSON.stringify(JSON.stringify(g))})">
+          <div>
+            <div class="matchup">${g.awayName} <span style="color:#6b7280;font-weight:400;">@</span> ${g.homeName}</div>
+            <div class="game-time">${g.time}${g.state !== 'pre' ? ' <span style="color:#f59e0b;">· In Progress</span>' : ''}</div>
+          </div>
+          <div class="sport-pill">${SPORT_CONFIG[sport].label}</div>
+        </div>
+      `).join('');
+    }
+
+    function selectGame(gameJson) {
+      const g = JSON.parse(gameJson);
+      // Pre-fill the pick composer
+      document.getElementById('pickSport').value = g.sport;
+      document.getElementById('pickGameInfo').value = g.gameInfo;
+      // Close picker, open composer
+      closeModal('gamePickerModal');
+      setTimeout(() => {
+        document.getElementById('pickComposerModal').classList.add('active');
+        // Focus the pick value field so they can type right away
+        setTimeout(() => document.getElementById('pickValue').focus(), 100);
+      }, 150);
+    }
+    // ── END GAME PICKER ───────────────────────────────────────────────────────
+
     // ADMIN FAB
     function toggleFab() {
       const fab = document.getElementById('adminFab');
@@ -3033,6 +3139,26 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
     `;
     document.head.appendChild(style);
   </script>
+
+
+  <!-- GAME PICKER MODAL -->
+  <div class="modal" id="gamePickerModal">
+    <div class="modal-content" style="max-width:560px;">
+      <div class="modal-header">
+        <span>📅 Pick a Game</span>
+        <button class="modal-close" onclick="closeModal('gamePickerModal')">✕</button>
+      </div>
+      <div class="game-picker-tabs" id="gamePickerTabs">
+        <div class="game-picker-tab active" onclick="switchSport('nba', this)">🏀 NBA</div>
+        <div class="game-picker-tab" onclick="switchSport('nfl', this)">🏈 NFL</div>
+        <div class="game-picker-tab" onclick="switchSport('nhl', this)">🏒 NHL</div>
+        <div class="game-picker-tab" onclick="switchSport('mlb', this)">⚾ MLB</div>
+      </div>
+      <div class="game-picker-list" id="gamePickerList">
+        <div class="game-picker-loading">Loading games...</div>
+      </div>
+    </div>
+  </div>
 
 </body>
 </html>
