@@ -2272,7 +2272,7 @@
   <script>
     // CONFIG
     const ADMIN_PASSWORD = 'sharpedge';
-    const DATA_VERSION = 'v10'; // bump to force-reset localStorage on all browsers
+    const DATA_VERSION = 'v11'; // bump to force-reset localStorage on all browsers
 
     // SAMPLE DATA
     const SAMPLE_PICKS = [
@@ -3011,19 +3011,83 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
 
 
     // ── GAME PICKER ──────────────────────────────────────────────────────────
+    // ── GAME PICKER ──────────────────────────────────────────────────────────
     const SPORT_CONFIG = {
-      nba: { label: 'NBA', espn: 'basketball/nba', abbr: 'NBA' },
-      nfl: { label: 'NFL', espn: 'football/nfl', abbr: 'NFL' },
-      nhl: { label: 'NHL', espn: 'hockey/nhl',   abbr: 'NHL' },
-      mlb: { label: 'MLB', espn: 'baseball/mlb', abbr: 'MLB' },
+      nba:   { label: 'NBA',   espn: 'basketball/nba',                     abbr: 'NBA'   },
+      ncaab: { label: 'NCAAB', espn: 'basketball/mens-college-basketball',  abbr: 'NCAAB' },
+      nfl:   { label: 'NFL',   espn: 'football/nfl',                       abbr: 'NFL'   },
+      nhl:   { label: 'NHL',   espn: 'hockey/nhl',                         abbr: 'NHL'   },
+      mlb:   { label: 'MLB',   espn: 'baseball/mlb',                       abbr: 'MLB'   },
     };
     let pickerCache = {};
     let currentPickerSport = 'nba';
+    let parlayMode = false;
+    let parlayLegs = []; // [{game, pickValue}]
 
     function openGamePicker() {
       if (!adminMode) { console.warn("[YFC] Admin access required."); return; }
+      parlayMode = false;
+      parlayLegs = [];
+      updateParlayUI();
       document.getElementById('gamePickerModal').classList.add('active');
+      // Reset to NBA tab
+      document.querySelectorAll('.game-picker-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.game-picker-tab')[0].classList.add('active');
+      currentPickerSport = 'nba';
       loadGamesForSport('nba');
+    }
+
+    function toggleParlayMode() {
+      parlayMode = !parlayMode;
+      parlayLegs = [];
+      updateParlayUI();
+      // Re-render so card click behavior updates
+      if (pickerCache[currentPickerSport]) renderGameList(pickerCache[currentPickerSport], currentPickerSport);
+    }
+
+    function updateParlayUI() {
+      const knob    = document.getElementById('parlayToggleKnob');
+      const toggle  = document.getElementById('parlayToggle');
+      const slip    = document.getElementById('parlaySlip');
+      const title   = document.getElementById('gamePickerTitle');
+      if (parlayMode) {
+        knob.style.left = '18px';
+        knob.style.background = '#00e87a';
+        toggle.style.background = 'rgba(0,232,122,0.2)';
+        toggle.style.borderColor = 'rgba(0,232,122,0.5)';
+        slip.style.display = 'block';
+        title.textContent = '🎰 Build a Parlay';
+      } else {
+        knob.style.left = '2px';
+        knob.style.background = '#6b7280';
+        toggle.style.background = 'rgba(255,255,255,0.1)';
+        toggle.style.borderColor = 'rgba(255,255,255,0.15)';
+        slip.style.display = 'none';
+        title.textContent = '📅 Pick a Game';
+      }
+      renderParlaySlip();
+    }
+
+    function renderParlaySlip() {
+      const legCount  = document.getElementById('parlayLegCount');
+      const legsEl    = document.getElementById('parlayLegs');
+      const buildBtn  = document.getElementById('buildParlayBtn');
+      legCount.textContent = parlayLegs.length + ' leg' + (parlayLegs.length !== 1 ? 's' : '') + ' selected';
+      buildBtn.style.display = parlayLegs.length >= 2 ? 'block' : 'none';
+      legsEl.innerHTML = parlayLegs.map((leg, i) => `
+        <div class="parlay-leg-row">
+          <span class="parlay-leg-game">${leg.game.awayAbbr} @ ${leg.game.homeAbbr} (${SPORT_CONFIG[leg.game.sport].label})</span>
+          <input class="parlay-leg-pick" placeholder="Pick (e.g. LAL -5.5)" value="${leg.pickValue || ''}"
+            oninput="parlayLegs[${i}].pickValue = this.value" />
+          <span class="parlay-leg-remove" onclick="removeParlayLeg(${i})">✕</span>
+        </div>
+      `).join('');
+    }
+
+    function removeParlayLeg(i) {
+      parlayLegs.splice(i, 1);
+      renderParlaySlip();
+      if (pickerCache[currentPickerSport]) renderGameList(pickerCache[currentPickerSport], currentPickerSport);
     }
 
     function switchSport(sport, tabEl) {
@@ -3035,49 +3099,38 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
 
     function loadGamesForSport(sport) {
       const list = document.getElementById('gamePickerList');
-      if (pickerCache[sport]) {
-        renderGameList(pickerCache[sport], sport);
-        return;
-      }
+      if (pickerCache[sport]) { renderGameList(pickerCache[sport], sport); return; }
       list.innerHTML = '<div class="game-picker-loading">Loading ' + SPORT_CONFIG[sport].label + ' games...</div>';
-      const url = 'https://site.api.espn.com/apis/site/v2/sports/' + SPORT_CONFIG[sport].espn + '/scoreboard';
-      fetch(url)
+      fetch('https://site.api.espn.com/apis/site/v2/sports/' + SPORT_CONFIG[sport].espn + '/scoreboard')
         .then(r => r.json())
         .then(data => {
-          const games = parseESPNGames(data, sport);
-          pickerCache[sport] = games;
-          renderGameList(games, sport);
+          pickerCache[sport] = parseESPNGames(data, sport);
+          renderGameList(pickerCache[sport], sport);
         })
         .catch(() => {
-          list.innerHTML = '<div class="game-picker-empty">Could not load ' + SPORT_CONFIG[sport].label + ' games. Try manual entry.</div>';
+          list.innerHTML = '<div class="game-picker-empty">No ' + SPORT_CONFIG[sport].label + ' games today.</div>';
         });
     }
 
     function parseESPNGames(data, sport) {
-      const events = data.events || [];
-      return events.map(e => {
+      return (data.events || []).map(e => {
         const comp = e.competitions[0];
         const teams = comp.competitors;
         const away = teams.find(t => t.homeAway === 'away') || teams[0];
         const home = teams.find(t => t.homeAway === 'home') || teams[1];
-        const awayAbbr = away.team.abbreviation;
-        const homeAbbr = home.team.abbreviation;
-        const awayName = away.team.shortDisplayName || away.team.displayName;
-        const homeName = home.team.shortDisplayName || home.team.displayName;
         const detail = comp.status.type.shortDetail || '';
-        const state = comp.status.type.state || 'pre';
-        // Parse time into cleaner format
+        const state  = comp.status.type.state || 'pre';
         let timeStr = detail;
-        const timeMatch = detail.match(/(\d+:\d+\s*[AP]M\s*E[SD]T)/i);
-        if (timeMatch) timeStr = timeMatch[1].replace('EST','ET').replace('EDT','ET');
+        const m = detail.match(/(\d+:\d+\s*[AP]M\s*E[SD]T)/i);
+        if (m) timeStr = m[1].replace('EST','ET').replace('EDT','ET');
         return {
           sport,
-          awayAbbr, homeAbbr, awayName, homeName,
-          matchup: awayName + ' @ ' + homeName,
-          shortMatchup: awayAbbr + ' @ ' + homeAbbr,
-          gameInfo: awayAbbr + ' @ ' + homeAbbr + ' — ' + timeStr,
-          time: timeStr,
-          state,
+          awayAbbr: away.team.abbreviation,
+          homeAbbr: home.team.abbreviation,
+          awayName: away.team.shortDisplayName || away.team.displayName,
+          homeName: home.team.shortDisplayName || home.team.displayName,
+          gameInfo: away.team.abbreviation + ' @ ' + home.team.abbreviation + ' — ' + timeStr,
+          time: timeStr, state,
         };
       });
     }
@@ -3088,29 +3141,77 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
         list.innerHTML = '<div class="game-picker-empty">No ' + SPORT_CONFIG[sport].label + ' games today.</div>';
         return;
       }
-      list.innerHTML = games.map((g, i) => `
-        <div class="game-picker-card" onclick="selectGame(${JSON.stringify(JSON.stringify(g))})">
-          <div>
-            <div class="matchup">${g.awayName} <span style="color:#6b7280;font-weight:400;">@</span> ${g.homeName}</div>
-            <div class="game-time">${g.time}${g.state !== 'pre' ? ' <span style="color:#f59e0b;">· In Progress</span>' : ''}</div>
-          </div>
-          <div class="sport-pill">${SPORT_CONFIG[sport].label}</div>
-        </div>
-      `).join('');
+      const selectedInfos = parlayLegs.map(l => l.game.gameInfo);
+      list.innerHTML = games.map(g => {
+        const inParlay = selectedInfos.includes(g.gameInfo);
+        const gJson = JSON.stringify(JSON.stringify(g));
+        return `
+          <div class="game-picker-card${inParlay ? ' parlay-selected' : ''}"
+               onclick="${parlayMode ? 'toggleParlayLeg(' + gJson + ')' : 'selectGame(' + gJson + ')'}">
+            <div>
+              <div class="matchup">${g.awayName} <span style="color:#6b7280;font-weight:400;">@</span> ${g.homeName}</div>
+              <div class="game-time">${g.time}${g.state !== 'pre' ? ' <span style="color:#f59e0b;">· Live</span>' : ''}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              ${inParlay ? '<span style="font-size:11px;color:#00e87a;font-weight:700;">✓ Added</span>' : ''}
+              <div class="sport-pill">${SPORT_CONFIG[sport].label}</div>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    function toggleParlayLeg(gameJson) {
+      const g = JSON.parse(gameJson);
+      const idx = parlayLegs.findIndex(l => l.game.gameInfo === g.gameInfo);
+      if (idx >= 0) {
+        parlayLegs.splice(idx, 1);
+      } else {
+        parlayLegs.push({ game: g, pickValue: '' });
+      }
+      renderParlaySlip();
+      renderGameList(pickerCache[currentPickerSport], currentPickerSport);
     }
 
     function selectGame(gameJson) {
       const g = JSON.parse(gameJson);
-      // Pre-fill the pick composer
       document.getElementById('pickSport').value = g.sport;
       document.getElementById('pickGameInfo').value = g.gameInfo;
-      // Close picker, open composer
       closeModal('gamePickerModal');
       setTimeout(() => {
         document.getElementById('pickComposerModal').classList.add('active');
-        // Focus the pick value field so they can type right away
         setTimeout(() => document.getElementById('pickValue').focus(), 100);
       }, 150);
+    }
+
+    function buildParlay() {
+      if (parlayLegs.length < 2) { alert('Add at least 2 legs to build a parlay.'); return; }
+      // Build a combined pick string from all legs
+      const legsText = parlayLegs.map((l, i) => {
+        const pickPart = l.pickValue ? l.pickValue : '(pick TBD)';
+        return (i+1) + '. ' + l.game.awayAbbr + ' @ ' + l.game.homeAbbr + ' — ' + pickPart;
+      }).join('\n');
+      const gamesSummary = parlayLegs.map(l => l.game.awayAbbr + '/' + l.game.homeAbbr).join(' + ');
+      // Fill pick composer as parlay
+      document.getElementById('pickSport').value = parlayLegs[0].game.sport;
+      document.getElementById('pickBetType').value = 'Parlay';
+      document.getElementById('pickGameInfo').value = parlayLegs.length + '-Leg Parlay: ' + gamesSummary;
+      document.getElementById('pickValue').value = legsText;
+      closeModal('gamePickerModal');
+      setTimeout(() => {
+        document.getElementById('pickComposerModal').classList.add('active');
+        // Set bet type to Parlay — add it to the select if missing
+        const btSel = document.getElementById('pickBetType');
+        if (![...btSel.options].find(o => o.value === 'Parlay')) {
+          const opt = document.createElement('option');
+          opt.value = 'Parlay'; opt.textContent = 'Parlay';
+          btSel.appendChild(opt);
+        }
+        btSel.value = 'Parlay';
+        setTimeout(() => document.getElementById('pickTeaser').focus(), 100);
+      }, 150);
+      // Reset parlay state
+      parlayLegs = [];
+      parlayMode = false;
     }
     // ── END GAME PICKER ───────────────────────────────────────────────────────
 
@@ -3143,13 +3244,35 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
 
   <!-- GAME PICKER MODAL -->
   <div class="modal" id="gamePickerModal">
-    <div class="modal-content" style="max-width:560px;">
+    <div class="modal-content" style="max-width:600px;">
       <div class="modal-header">
-        <span>📅 Pick a Game</span>
-        <button class="modal-close" onclick="closeModal('gamePickerModal')">✕</button>
+        <span id="gamePickerTitle">📅 Pick a Game</span>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:#9ca3af;font-weight:500;">
+            <div id="parlayToggle" onclick="toggleParlayMode()" style="width:36px;height:20px;border-radius:10px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.15);cursor:pointer;position:relative;transition:all .2s;">
+              <div id="parlayToggleKnob" style="width:14px;height:14px;border-radius:50%;background:#6b7280;position:absolute;top:2px;left:2px;transition:all .2s;"></div>
+            </div>
+            Parlay Mode
+          </label>
+          <button class="modal-close" onclick="closeModal('gamePickerModal')">✕</button>
+        </div>
       </div>
+
+      <!-- Parlay slip (hidden by default) -->
+      <div id="parlaySlip" style="display:none;background:rgba(0,232,122,0.06);border:1px solid rgba(0,232,122,0.2);border-radius:10px;padding:12px 14px;margin-bottom:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <span style="font-size:12px;font-weight:700;color:#00e87a;text-transform:uppercase;letter-spacing:.08em;">Parlay Slip</span>
+          <span id="parlayLegCount" style="font-size:12px;color:#9ca3af;">0 legs selected</span>
+        </div>
+        <div id="parlayLegs" style="display:flex;flex-direction:column;gap:6px;"></div>
+        <button id="buildParlayBtn" onclick="buildParlay()" style="display:none;margin-top:10px;width:100%;padding:10px;background:rgba(0,232,122,0.15);border:1px solid rgba(0,232,122,0.4);border-radius:8px;color:#00e87a;font-weight:700;font-size:14px;cursor:pointer;">
+          🎯 Build This Parlay →
+        </button>
+      </div>
+
       <div class="game-picker-tabs" id="gamePickerTabs">
         <div class="game-picker-tab active" onclick="switchSport('nba', this)">🏀 NBA</div>
+        <div class="game-picker-tab" onclick="switchSport('ncaab', this)">🏫 NCAAB</div>
         <div class="game-picker-tab" onclick="switchSport('nfl', this)">🏈 NFL</div>
         <div class="game-picker-tab" onclick="switchSport('nhl', this)">🏒 NHL</div>
         <div class="game-picker-tab" onclick="switchSport('mlb', this)">⚾ MLB</div>
