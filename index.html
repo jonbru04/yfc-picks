@@ -2184,6 +2184,28 @@
         </div>
 
         <div class="form-group">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div>
+              <label>Units Risk</label>
+              <input id="pickUnits" type="number" step="0.1" min="0.5" max="5" placeholder="1.1" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:#f9fafb;font-size:14px;">
+            </div>
+            <div>
+              <label>Best Odds Book</label>
+              <select id="pickBook" style="width:100%;background:#1f2937;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:#f9fafb;font-size:14px;">
+                <option value="">Select book...</option>
+                <option value="DraftKings">DraftKings</option>
+                <option value="FanDuel">FanDuel</option>
+                <option value="BetMGM">BetMGM</option>
+                <option value="Caesars">Caesars</option>
+                <option value="PointsBet">PointsBet</option>
+                <option value="ESPN Bet">ESPN Bet</option>
+                <option value="Bet365">Bet365</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group">
           <label>Public Teaser <span style="color:#6b7280;font-weight:400;">(shown to everyone)</span></label>
           <input type="text" id="pickTeaser" placeholder="Why this game, why this number — 1-2 sentences" required>
         </div>
@@ -2245,7 +2267,7 @@
   <script>
     // CONFIG
     const ADMIN_PASSWORD = 'sharpedge';
-    const DATA_VERSION = 'v6'; // bump to force-reset localStorage on all browsers
+    const DATA_VERSION = 'v7'; // bump to force-reset localStorage on all browsers
 
     // SAMPLE DATA
     const SAMPLE_PICKS = [
@@ -2260,6 +2282,8 @@
         analysis: 'We posted Knicks -2.5 at home based on Houston coming in on the second night of a back-to-back and New York\'s strong home ATS record in February. The number felt light for a rested home favorite.\n\nKnicks were down 18 in the fourth quarter. Towns (25 pts), Brunson (20 pts), and Anunoby (20 pts) led a stunning comeback — but the Knicks only won 108-106, falling a half-point short of the cover.\n\nKevin Durant dropped 30 for Houston. We had the right side. The outcome was right. The margin wasn\'t.\n\n"A 2-point win on a -2.5 pick is the most honest kind of loss in this business," our model noted. "We\'d make this bet again tomorrow. Variance is part of the process. The record shows every result immediately."\n\nResult: Loss. Knicks won 108-106. Did not cover -2.5.',
         result: 'loss',
         pinned: false,
+        units: 1.1,
+        book: 'DraftKings',
         date: 'Feb 21, 2026'
       },
       {
@@ -2273,6 +2297,8 @@
         analysis: 'The Spurs were rolling — 7 straight wins coming in, Wembanyama playing the best two-way basketball of his young career. Sacramento was on the second night of a back-to-back, third road game in five nights.\n\nThe line opened at SAS -3 and moved to -4.5 on sharp steam before the public touched it. That kind of early movement on a Spurs home game told us everything. We got on at -3.5.\n\n"Wembanyama in this spot is almost unfair," our head analyst noted. "28 points, 15 rebounds, 6 assists, 4 blocks. The Spurs dominated all four quarters. Sacramento had no answer."\n\nSpurs won comfortably. Their 8th straight win. Covered easily.\n\nResult: Win. Covered.',
         result: 'win',
         pinned: false,
+        units: 1.1,
+        book: 'FanDuel',
         date: 'Feb 21, 2026'
       },
       {
@@ -2286,6 +2312,8 @@
         analysis: 'Boston came into Los Angeles as one of the hottest teams in the East. The Lakers have been inconsistent at home and their defensive rating over the last two weeks ranked bottom-10 in the league.\n\nThe line opened at BOS -6 and sharp money pushed it to -7.5 over 36 hours — a full 1.5-point move all going one direction. When you see that kind of movement against a marquee home team, you follow it.\n\n"The public loves betting the Lakers because of the brand," our model noted. "Sharp money doesn\'t care about the brand. It cares about the number. -7.5 on a Boston squad playing this well was still value."\n\nJaylen Brown finished with 32 points, 8 rebounds, 7 assists. Celtics won 111-89 — won by 22. Covered by 14.5 points.\n\nResult: Win. Covered easily.',
         result: 'win',
         pinned: false,
+        units: 1.1,
+        book: 'BetMGM',
         date: 'Feb 22, 2026'
       },
       {
@@ -2299,6 +2327,8 @@
         analysis: 'Utah has been in full rebuild mode. Their defensive rating ranks last in the league over the past month. Houston at home with Kevin Durant is a problem for any team — for Utah, it\'s a mismatch at every position.\n\nThe line sat at -12.5 and the public was split — recreational bettors always second-guess double-digit spreads. Sharp money stayed on Houston throughout. No meaningful line movement away from the Rockets, which told us the number was right.\n\n"Big spreads are only scary if you don\'t trust the matchup," our model flagged. "Trust the matchup here. Utah doesn\'t have the personnel to keep this competitive for four quarters."\n\nHouston won 125-105. Won by 20. Covered -12.5 by 7.5 points.\n\nResult: Win. Rockets covered.',
         result: 'win',
         pinned: false,
+        units: 1.1,
+        book: 'DraftKings',
         date: 'Feb 23, 2026'
       },
       {
@@ -2312,6 +2342,8 @@
         analysis: 'The Spurs were on one of the best stretches in the NBA — 8 wins coming into this game, dominant at home, Wembanyama playing at an elite level at both ends.\n\nDetroit has been excellent this season but road games on a western swing are historically difficult. The Pistons were 4-8 ATS on the road over the previous six weeks.\n\n"When a team is on a 9-game winning streak and you can still get them at -6.5 at home, that\'s the market underreacting to momentum," our sharp-play tracker noted. "We\'ve seen this pattern before. Ride it until the line catches up."\n\nSpurs won 114-103. Won by 11. Covered -6.5 by 4.5 points. Their 9th straight win.\n\nResult: Win. Covered.',
         result: 'win',
         pinned: false,
+        units: 1.1,
+        book: 'Caesars',
         date: 'Feb 23, 2026'
       },
       {
@@ -2326,6 +2358,8 @@
         result: 'win',
         free: true,
         pinned: false,
+        units: 1.0,
+        book: 'FanDuel',
         date: 'Feb 24, 2026'
       }
     ];
@@ -2592,7 +2626,12 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
         </div>
 
         <div class="pick-locked-zone${isRevealed ? ' revealed' : ''}">
-          ${isRevealed ? `<div style="font-size: 17px; color: #00e87a; font-weight: 700; letter-spacing:.02em;">${pick.pick}</div>` : `
+          ${isRevealed ? `
+            <div style="font-size: 17px; color: #00e87a; font-weight: 700; letter-spacing:.02em;">${pick.pick}</div>
+            <div style="display:flex;gap:16px;margin-top:8px;align-items:center;">
+              ${pick.units ? `<span style="font-size:12px;color:#9ca3af;"><span style="color:#f59e0b;font-weight:700;">${pick.units}u</span> to win ${pick.units === 1.0 ? (1.45).toFixed(2) : (pick.units / 1.1).toFixed(2)}u</span>` : ''}
+              ${pick.book ? `<span style="font-size:11px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#9ca3af;padding:2px 8px;border-radius:6px;">Best odds: ${pick.book}</span>` : ''}
+            </div>` : `
             <div class="lock-icon">🔒</div>
             <div class="lock-text">Members Only — <a onclick="applyForMembership()" style="color:#00e87a;cursor:pointer;text-decoration:underline;">Apply to Reveal</a></div>
           `}
@@ -2836,6 +2875,8 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
         confidence: parseInt(document.getElementById('pickConfidence').value),
         teaser: document.getElementById('pickTeaser').value,
         analysis: document.getElementById('pickAnalysis').value || '',
+        units: parseFloat(document.getElementById('pickUnits').value) || 1.1,
+        book: document.getElementById('pickBook').value || '',
         result: 'pending',
         pinned: document.getElementById('pickPin').checked,
         date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -2852,6 +2893,8 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
       document.getElementById('pickValue').value = '';
       document.getElementById('pickTeaser').value = '';
       document.getElementById('pickAnalysis').value = '';
+      document.getElementById('pickUnits').value = '';
+      document.getElementById('pickBook').value = '';
       document.getElementById('pickPin').checked = false;
       document.getElementById('pickConfidence').value = 3;
       selectedConfidence = 3;
