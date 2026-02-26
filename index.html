@@ -1781,6 +1781,7 @@
       <div class="hero-stats">
         <div class="stat-item">
           <div class="stat-value" id="heroRecord">5-1</div>
+          <div id="heroUnits" style="font-size:13px;font-weight:700;color:#00e87a;margin-top:2px;min-height:18px;"></div>
           <div class="stat-label">Current Record</div>
         </div>
         <div class="stat-item">
@@ -1808,7 +1809,10 @@
       </div>
 
       <div class="picks-header">
-        <div class="record-tracker" id="recordTracker">Season: 0W - 0L - 0P</div>
+        <div class="record-tracker" id="recordTracker">
+          <span id="recordText">Season: 0W - 0L</span>
+          <span id="recordUnits" style="margin-left:12px;font-size:13px;font-weight:700;color:#00e87a;"></span>
+        </div>
         <button class="btn-post-pick" id="btnPostPick" onclick="openPickComposer()">🎯 Post Pick</button>
       </div>
 
@@ -2267,7 +2271,7 @@
   <script>
     // CONFIG
     const ADMIN_PASSWORD = 'sharpedge';
-    const DATA_VERSION = 'v8'; // bump to force-reset localStorage on all browsers
+    const DATA_VERSION = 'v9'; // bump to force-reset localStorage on all browsers
 
     // SAMPLE DATA
     const SAMPLE_PICKS = [
@@ -2709,20 +2713,33 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
       const total = wins + losses;
       const winPct = total > 0 ? ((wins / total) * 100).toFixed(0) : 0;
       const net = calcNetUnits();
-      const netStr = net >= 0 ? `+${net.toFixed(2)}u` : `${net.toFixed(2)}u`;
+      const netStr = net >= 0 ? '+' + net.toFixed(2) + 'u' : net.toFixed(2) + 'u';
       const netColor = net >= 0 ? '#00e87a' : '#ef4444';
 
-      let text = `Season: ${wins}W - ${losses}L`;
-      if (pushes > 0) text += ` - ${pushes}P`;
-      if (total > 0) text += ` (${winPct}%)`;
+      let recText = 'Season: ' + wins + 'W - ' + losses + 'L';
+      if (pushes > 0) recText += ' - ' + pushes + 'P';
+      if (total > 0) recText += ' (' + winPct + '%)';
 
-      const tracker = document.getElementById('recordTracker');
-      tracker.innerHTML = `${text} &nbsp;<span style="color:${netColor};font-weight:700;font-size:13px;">${netStr}</span>`;
+      // Update record text
+      const recEl = document.getElementById('recordText');
+      if (recEl) recEl.textContent = recText;
 
-      // Update hero record stat
+      // Update units in record bar
+      const unitsEl = document.getElementById('recordUnits');
+      if (unitsEl) {
+        unitsEl.textContent = netStr;
+        unitsEl.style.color = netColor;
+      }
+
+      // Update hero record
       const heroRecord = document.getElementById('heroRecord');
-      if (heroRecord) {
-        heroRecord.innerHTML = `${wins}-${losses} <span style="display:block;font-size:14px;color:${netColor};font-weight:600;margin-top:2px;">${netStr}</span>`;
+      if (heroRecord) heroRecord.textContent = wins + '-' + losses;
+
+      // Update hero units
+      const heroUnits = document.getElementById('heroUnits');
+      if (heroUnits) {
+        heroUnits.textContent = netStr;
+        heroUnits.style.color = netColor;
       }
     }
 
