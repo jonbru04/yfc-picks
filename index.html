@@ -1780,7 +1780,7 @@
       <p class="hero-note">✉️ Email to join &nbsp;•&nbsp; $25/month &nbsp;•&nbsp; Cancel anytime</p>
       <div class="hero-stats">
         <div class="stat-item">
-          <div class="stat-value">5-1</div>
+          <div class="stat-value" id="heroRecord">5-1</div>
           <div class="stat-label">Current Record</div>
         </div>
         <div class="stat-item">
@@ -2267,7 +2267,7 @@
   <script>
     // CONFIG
     const ADMIN_PASSWORD = 'sharpedge';
-    const DATA_VERSION = 'v7'; // bump to force-reset localStorage on all browsers
+    const DATA_VERSION = 'v8'; // bump to force-reset localStorage on all browsers
 
     // SAMPLE DATA
     const SAMPLE_PICKS = [
@@ -2283,6 +2283,7 @@
         result: 'loss',
         pinned: false,
         units: 1.1,
+        toWin: 1.0,
         book: 'DraftKings',
         date: 'Feb 21, 2026'
       },
@@ -2298,6 +2299,7 @@
         result: 'win',
         pinned: false,
         units: 1.1,
+        toWin: 1.0,
         book: 'FanDuel',
         date: 'Feb 21, 2026'
       },
@@ -2313,6 +2315,7 @@
         result: 'win',
         pinned: false,
         units: 1.1,
+        toWin: 1.0,
         book: 'BetMGM',
         date: 'Feb 22, 2026'
       },
@@ -2328,6 +2331,7 @@
         result: 'win',
         pinned: false,
         units: 1.1,
+        toWin: 1.0,
         book: 'DraftKings',
         date: 'Feb 23, 2026'
       },
@@ -2343,6 +2347,7 @@
         result: 'win',
         pinned: false,
         units: 1.1,
+        toWin: 1.0,
         book: 'Caesars',
         date: 'Feb 23, 2026'
       },
@@ -2359,6 +2364,7 @@
         free: true,
         pinned: false,
         units: 1.0,
+        toWin: 1.45,
         book: 'FanDuel',
         date: 'Feb 24, 2026'
       }
@@ -2629,7 +2635,17 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
           ${isRevealed ? `
             <div style="font-size: 17px; color: #00e87a; font-weight: 700; letter-spacing:.02em;">${pick.pick}</div>
             <div style="display:flex;gap:16px;margin-top:8px;align-items:center;">
-              ${pick.units ? `<span style="font-size:12px;color:#9ca3af;"><span style="color:#f59e0b;font-weight:700;">${pick.units}u</span> to win ${pick.units === 1.0 ? (1.45).toFixed(2) : (pick.units / 1.1).toFixed(2)}u</span>` : ''}
+              ${pick.units ? `
+                <span style="font-size:12px;">
+                  ${pick.result === 'pending'
+                    ? `<span style="color:#f59e0b;font-weight:700;">${pick.units}u at risk</span><span style="color:#6b7280;"> · to win ${(pick.toWin || parseFloat((pick.units/1.1).toFixed(2)))}u</span>`
+                    : pick.result === 'win'
+                      ? `<span style="color:#00e87a;font-weight:700;">+${pick.toWin || parseFloat((pick.units/1.1).toFixed(2))}u</span><span style="color:#6b7280;"> profit</span>`
+                      : pick.result === 'loss'
+                        ? `<span style="color:#ef4444;font-weight:700;">-${pick.units}u</span><span style="color:#6b7280;"> lost</span>`
+                        : `<span style="color:#9ca3af;font-weight:600;">Push — ${pick.units}u returned</span>`
+                  }
+                </span>` : ''}
               ${pick.book ? `<span style="font-size:11px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#9ca3af;padding:2px 8px;border-radius:6px;">Best odds: ${pick.book}</span>` : ''}
             </div>` : `
             <div class="lock-icon">🔒</div>
@@ -2675,18 +2691,39 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
       return card;
     }
 
+    function calcNetUnits() {
+      let net = 0;
+      picks.forEach(p => {
+        const u = p.units || 1.1;
+        const tw = p.toWin || parseFloat((u / 1.1).toFixed(2));
+        if (p.result === 'win') net += tw;
+        else if (p.result === 'loss') net -= u;
+      });
+      return net;
+    }
+
     function updateRecordTracker() {
       const wins = picks.filter(p => p.result === 'win').length;
       const losses = picks.filter(p => p.result === 'loss').length;
       const pushes = picks.filter(p => p.result === 'push').length;
       const total = wins + losses;
       const winPct = total > 0 ? ((wins / total) * 100).toFixed(0) : 0;
+      const net = calcNetUnits();
+      const netStr = net >= 0 ? `+${net.toFixed(2)}u` : `${net.toFixed(2)}u`;
+      const netColor = net >= 0 ? '#00e87a' : '#ef4444';
 
       let text = `Season: ${wins}W - ${losses}L`;
       if (pushes > 0) text += ` - ${pushes}P`;
       if (total > 0) text += ` (${winPct}%)`;
 
-      document.getElementById('recordTracker').textContent = text;
+      const tracker = document.getElementById('recordTracker');
+      tracker.innerHTML = `${text} &nbsp;<span style="color:${netColor};font-weight:700;font-size:13px;">${netStr}</span>`;
+
+      // Update hero record stat
+      const heroRecord = document.getElementById('heroRecord');
+      if (heroRecord) {
+        heroRecord.innerHTML = `${wins}-${losses} <span style="display:block;font-size:14px;color:${netColor};font-weight:600;margin-top:2px;">${netStr}</span>`;
+      }
     }
 
     function markPickResult(pickId, result) {
@@ -2876,6 +2913,7 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
         teaser: document.getElementById('pickTeaser').value,
         analysis: document.getElementById('pickAnalysis').value || '',
         units: parseFloat(document.getElementById('pickUnits').value) || 1.1,
+        toWin: parseFloat((( parseFloat(document.getElementById('pickUnits').value) || 1.1 ) / 1.1).toFixed(2)),
         book: document.getElementById('pickBook').value || '',
         result: 'pending',
         pinned: document.getElementById('pickPin').checked,
