@@ -2272,7 +2272,7 @@
   <script>
     // CONFIG
     const ADMIN_PASSWORD = 'sharpedge';
-    const DATA_VERSION = 'v11'; // bump to force-reset localStorage on all browsers
+    const DATA_VERSION = 'v12'; // bump to force-reset localStorage on all browsers
 
     // SAMPLE DATA
     const SAMPLE_PICKS = [
@@ -3014,7 +3014,7 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
     // ── GAME PICKER ──────────────────────────────────────────────────────────
     const SPORT_CONFIG = {
       nba:   { label: 'NBA',   espn: 'basketball/nba',                     abbr: 'NBA'   },
-      ncaab: { label: 'NCAAB', espn: 'basketball/mens-college-basketball',  abbr: 'NCAAB' },
+      ncaab: { label: 'NCAAB', espn: 'basketball/mens-college-basketball',  abbr: 'NCAAB', params: 'groups=50&limit=200' },
       nfl:   { label: 'NFL',   espn: 'football/nfl',                       abbr: 'NFL'   },
       nhl:   { label: 'NHL',   espn: 'hockey/nhl',                         abbr: 'NHL'   },
       mlb:   { label: 'MLB',   espn: 'baseball/mlb',                       abbr: 'MLB'   },
@@ -3101,7 +3101,9 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
       const list = document.getElementById('gamePickerList');
       if (pickerCache[sport]) { renderGameList(pickerCache[sport], sport); return; }
       list.innerHTML = '<div class="game-picker-loading">Loading ' + SPORT_CONFIG[sport].label + ' games...</div>';
-      fetch('https://site.api.espn.com/apis/site/v2/sports/' + SPORT_CONFIG[sport].espn + '/scoreboard')
+      const cfg = SPORT_CONFIG[sport];
+      const qs = cfg.params ? '?' + cfg.params : '';
+      fetch('https://site.api.espn.com/apis/site/v2/sports/' + cfg.espn + '/scoreboard' + qs)
         .then(r => r.json())
         .then(data => {
           pickerCache[sport] = parseESPNGames(data, sport);
