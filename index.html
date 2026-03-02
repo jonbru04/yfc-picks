@@ -2445,6 +2445,38 @@
     // SAMPLE DATA
     const SAMPLE_PICKS = [
       {
+        id: 1008,
+        sport: 'ncaab',
+        betType: 'Spread',
+        gameInfo: 'DUKE @ NCSU — Mon, Mar 2',
+        pick: 'DUKE -9.5 (-108)',
+        confidence: 3,
+        teaser: 'Duke on the road at NC State. The number is fair and the Blue Devils have the talent to cover against a middling ACC squad tonight.',
+        analysis: '',
+        result: 'pending',
+        pinned: false,
+        units: 1.08,
+        toWin: 1.00,
+        book: 'DraftKings',
+        date: 'Mar 2, 2026'
+      },
+      {
+        id: 1007,
+        sport: 'ncaabaseball',
+        betType: 'Moneyline',
+        gameInfo: 'TOL @ LIP — Mon, Mar 2',
+        pick: 'LIP ML (-135)',
+        confidence: 3,
+        teaser: 'Lipscomb baseball enters this series finale with one of the better-coached programs in the ASUN. The market undervalues mid-majors like this, and their pitching staff — led by Landon Kiefer — has the numbers to control this game at home.',
+        analysis: '',
+        result: 'pending',
+        pinned: false,
+        units: 1.35,
+        toWin: 1.00,
+        book: 'DraftKings',
+        date: 'Mar 2, 2026'
+      },
+      {
         id: 1001,
         sport: 'nba',
         betType: 'Spread',
@@ -2689,7 +2721,9 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
         // Try the rolling backup before giving up
         const backup = localStorage.getItem('yfcPicksBackup');
         picks = backup ? JSON.parse(backup) : SAMPLE_PICKS;
-        if (backup) localStorage.setItem('communityPicks', backup); // restore from backup
+        // Immediately persist so future loads and backups are stable
+        localStorage.setItem('communityPicks', JSON.stringify(picks));
+        localStorage.setItem('yfcPicksBackup', JSON.stringify(picks));
       }
 
       const savedPosts = localStorage.getItem('communityPosts');
