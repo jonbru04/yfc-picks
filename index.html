@@ -2420,7 +2420,7 @@
   <script>
     // CONFIG
     const ADMIN_PASSWORD = 'sharpedge';
-    const DATA_VERSION = 'v21'; // bump to force-reset localStorage on all browsers
+    const DATA_VERSION = 'v22'; // bump to force-reset localStorage on all browsers
 
     // SAMPLE DATA
     const SAMPLE_PICKS = [
@@ -3492,7 +3492,10 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
       const awSp=[], hmSp=[], awML=[], hmML=[], ov=[], un=[];
       oddsArr.forEach(odds => {
         if (odds.$ref && !odds.provider) return; // skip unresolved $ref items
-        const book   = (odds.provider && odds.provider.name) ? odds.provider.name : 'DraftKings';
+        // Normalize book name (ESPN core API returns "Draft Kings" with space)
+        const rawBook = (odds.provider && odds.provider.name) ? odds.provider.name : 'DraftKings';
+        const book = rawBook.replace('Draft Kings','DraftKings').replace('Fan Duel','FanDuel')
+                            .replace('Caesars Sportsbook','Caesars').replace('bet365','Bet365');
         const spread = odds.spread || 0;
         const total  = odds.overUnder || 0;
         const awO = odds.awayTeamOdds || {}, hmO = odds.homeTeamOdds || {};
@@ -3543,7 +3546,8 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
           const sorted = refs.slice().sort((a,b) => a.$ref.localeCompare(b.$ref));
           // Fetch up to 3 books in parallel
           const fetched = await Promise.all(
-            sorted.slice(0, 3).map(r => fetch(r.$ref).then(x => x.json()).catch(() => null))
+            // Upgrade http:// → https:// to avoid mixed-content blocks on HTTPS pages
+            sorted.slice(0, 3).map(r => fetch(r.$ref.replace(/^http:\/\//,'https://')).then(x => x.json()).catch(() => null))
           );
           const valid = fetched.filter(Boolean);
           if (valid.length && parseESPNOddsItems(valid, g)) return true;
