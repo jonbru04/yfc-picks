@@ -366,6 +366,9 @@
       border-color: rgba(150, 150, 160, 0.3);
     }
 
+    .sport-ncaabaseball { background: rgba(22,163,74,0.15); color: #4ade80; border-color: rgba(22,163,74,0.4); }
+    .sport-ncaahockey   { background: rgba(59,130,246,0.15); color: #93c5fd; border-color: rgba(59,130,246,0.4); }
+    .sport-ncaalacrosse { background: rgba(168,85,247,0.15); color: #d8b4fe; border-color: rgba(168,85,247,0.4); }
     .sport-other {
       background: rgba(156, 163, 175, 0.1);
       color: #9ca3af;
@@ -2291,6 +2294,9 @@
               <option value="mlb">MLB</option>
               <option value="nhl">NHL</option>
               <option value="ncaab">NCAAB</option>
+              <option value="ncaabaseball">College Baseball</option>
+              <option value="ncaahockey">College Hockey</option>
+              <option value="ncaalacrosse">College Lacrosse</option>
               <option value="cfb">CFB</option>
               <option value="other">Other</option>
             </select>
@@ -2414,7 +2420,7 @@
   <script>
     // CONFIG
     const ADMIN_PASSWORD = 'sharpedge';
-    const DATA_VERSION = 'v19'; // bump to force-reset localStorage on all browsers
+    const DATA_VERSION = 'v20'; // bump to force-reset localStorage on all browsers
 
     // SAMPLE DATA
     const SAMPLE_PICKS = [
@@ -3175,11 +3181,14 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
     // ── GAME PICKER ──────────────────────────────────────────────────────────
     // ── GAME PICKER ──────────────────────────────────────────────────────────
     const SPORT_CONFIG = {
-      nba:   { label: 'NBA',   espn: 'basketball/nba',                    params: '' },
-      ncaab: { label: 'NCAAB', espn: 'basketball/mens-college-basketball', params: 'groups=50&limit=300' },
-      nfl:   { label: 'NFL',   espn: 'football/nfl',                      params: '' },
-      nhl:   { label: 'NHL',   espn: 'hockey/nhl',                        params: '' },
-      mlb:   { label: 'MLB',   espn: 'baseball/mlb',                      params: '' },
+      nba:          { label: 'NBA',           espn: 'basketball/nba',                    params: '' },
+      ncaab:        { label: 'NCAAB',         espn: 'basketball/mens-college-basketball', params: 'groups=50&limit=300' },
+      nfl:          { label: 'NFL',           espn: 'football/nfl',                      params: '' },
+      nhl:          { label: 'NHL',           espn: 'hockey/nhl',                        params: '' },
+      mlb:          { label: 'MLB',           espn: 'baseball/mlb',                      params: '' },
+      ncaabaseball: { label: 'College Baseball', espn: 'baseball/college-baseball',      params: '' },
+      ncaahockey:   { label: 'College Hockey',   espn: 'hockey/mens-college-hockey',     params: '' },
+      ncaalacrosse: { label: 'College Lacrosse', espn: 'lacrosse/mens-college-lacrosse', params: '' },
     };
     let pickerCache = {};
     let currentPickerSport = 'nba';
@@ -3360,11 +3369,14 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
     let currentPickGame = null;
 
     const ODDS_API_SPORT_MAP = {
-      nba:   'basketball_nba',
-      nfl:   'americanfootball_nfl',
-      nhl:   'icehockey_nhl',
-      mlb:   'baseball_mlb',
-      ncaab: 'basketball_ncaab',
+      nba:          'basketball_nba',
+      nfl:          'americanfootball_nfl',
+      nhl:          'icehockey_nhl',
+      mlb:          'baseball_mlb',
+      ncaab:        'basketball_ncaab',
+      ncaabaseball: 'baseball_ncaa',
+      ncaahockey:   'icehockey_ncaah',
+      ncaalacrosse: null,   // not on Odds API — ESPN DraftKings only
     };
 
     function fmtPrice(p) {
@@ -3466,7 +3478,7 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
     }
 
     function fetchESPNLines(g) {
-      const paths = { nba:'basketball/nba', nfl:'football/nfl', nhl:'hockey/nhl', mlb:'baseball/mlb', ncaab:'basketball/mens-college-basketball' };
+      const paths = { nba:'basketball/nba', nfl:'football/nfl', nhl:'hockey/nhl', mlb:'baseball/mlb', ncaab:'basketball/mens-college-basketball', ncaabaseball:'baseball/college-baseball', ncaahockey:'hockey/mens-college-hockey', ncaalacrosse:'lacrosse/mens-college-lacrosse' };
       const path = paths[g.sport] || 'basketball/nba';
       const url  = 'https://site.api.espn.com/apis/site/v2/sports/' + path + '/scoreboard'
                  + (g.sport === 'ncaab' ? '?groups=50&limit=300' : '');
@@ -3628,11 +3640,14 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
     // Parses pending picks and grades them automatically from ESPN final scores.
 
     const AG_SPORT_PATH = {
-      nba:   'basketball/nba',
-      nfl:   'football/nfl',
-      nhl:   'hockey/nhl',
-      mlb:   'baseball/mlb',
-      ncaab: 'basketball/mens-college-basketball',
+      nba:          'basketball/nba',
+      nfl:          'football/nfl',
+      nhl:          'hockey/nhl',
+      mlb:          'baseball/mlb',
+      ncaab:        'basketball/mens-college-basketball',
+      ncaabaseball: 'baseball/college-baseball',
+      ncaahockey:   'hockey/mens-college-hockey',
+      ncaalacrosse: 'lacrosse/mens-college-lacrosse',
     };
 
     function agParsePickStr(str) {
@@ -3855,6 +3870,9 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
         <div class="game-picker-tab" onclick="switchSport('nfl', this)">🏈 NFL</div>
         <div class="game-picker-tab" onclick="switchSport('nhl', this)">🏒 NHL</div>
         <div class="game-picker-tab" onclick="switchSport('mlb', this)">⚾ MLB</div>
+        <div class="game-picker-tab" onclick="switchSport('ncaabaseball', this)">⚾ C-Base</div>
+        <div class="game-picker-tab" onclick="switchSport('ncaahockey', this)">🏒 C-Hockey</div>
+        <div class="game-picker-tab" onclick="switchSport('ncaalacrosse', this)">🥍 C-Lax</div>
       </div>
       <!-- Game list view -->
       <div id="gameListView">
