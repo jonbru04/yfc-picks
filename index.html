@@ -2918,6 +2918,7 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
             <button class="admin-btn admin-btn-win" onclick="markPickResult('${pick.id}', 'win')">✓ Win</button>
             <button class="admin-btn admin-btn-loss" onclick="markPickResult('${pick.id}', 'loss')">✗ Loss</button>
             <button class="admin-btn admin-btn-push" onclick="markPickResult('${pick.id}', 'push')">= Push</button>
+            <button class="admin-btn" style="background:rgba(156,163,175,0.15);border:1px solid rgba(156,163,175,0.3);color:#9ca3af;" onclick="markPickResult('${pick.id}', 'pending')">↺ Pending</button>
             <button class="admin-btn admin-btn-pin" onclick="togglePickPin('${pick.id}')">${pick.pinned ? 'Unpin' : 'Pin'}</button>
             <button class="admin-btn admin-btn-delete" onclick="deletePick('${pick.id}')">Delete</button>
           </div>
