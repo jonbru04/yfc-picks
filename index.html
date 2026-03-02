@@ -1947,6 +1947,7 @@
           <span id="recordUnits" style="margin-left:12px;font-size:13px;font-weight:700;color:#00e87a;"></span>
         </div>
         <button class="btn-post-pick" id="btnPostPick" onclick="openGamePicker()">📅 Post Pick</button>
+        <button class="fab-btn" id="adminAutoGradeBtn" onclick="adminRunAutoGrader()">⚡ Auto-Grade Picks</button>
       </div>
 
       <div class="picks-grid" id="picksGrid">
@@ -2405,7 +2406,7 @@
   <script>
     // CONFIG
     const ADMIN_PASSWORD = 'sharpedge';
-    const DATA_VERSION = 'v16'; // bump to force-reset localStorage on all browsers
+    const DATA_VERSION = 'v17'; // bump to force-reset localStorage on all browsers
 
     // SAMPLE DATA
     const SAMPLE_PICKS = [
@@ -2628,6 +2629,9 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
       setupConfidenceSelector();
       setupFaqToggle();
       updateSubscriberCount();
+      // Auto-grade pending picks on load, then every 5 min
+      setTimeout(() => runAutoGrader(true), 2000);
+      setInterval(() => runAutoGrader(true), 5 * 60 * 1000);
     });
 
     // DATA MANAGEMENT
@@ -2806,7 +2810,10 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
           <strong style="color:#9ca3af;font-size:11px;text-transform:uppercase;letter-spacing:.08em;">Full Analysis</strong><br><br>${pick.analysis.replace(/\n\n/g, '<br><br>')}
         </div>` : ''}
 
-        <div class="result-badge result-${pick.result}">${pick.result.charAt(0).toUpperCase() + pick.result.slice(1)}</div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <div class="result-badge result-${pick.result}">${pick.result.charAt(0).toUpperCase() + pick.result.slice(1)}</div>
+          ${pick.autoGraded ? '<span title="Auto-graded from final score" style="font-size:10px;color:#6b7280;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px;">⚡ auto</span>' : ''}
+        </div>
 
         <div class="pick-footer">
           🔒 <a onclick="smoothScroll('#alerts')">Join to see the full pick + analysis</a>
@@ -3605,10 +3612,181 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
 
     // ── END GAME PICKER ───────────────────────────────────────────────────────
 
+
+    // ── AUTO-GRADER ────────────────────────────────────────────────────────────
+    // Parses pending picks and grades them automatically from ESPN final scores.
+
+    const AG_SPORT_PATH = {
+      nba:   'basketball/nba',
+      nfl:   'football/nfl',
+      nhl:   'hockey/nhl',
+      mlb:   'baseball/mlb',
+      ncaab: 'basketball/mens-college-basketball',
+    };
+
+    function agParsePickStr(str) {
+      // Returns { type: 'spread'|'ml'|'total', team?, line?, side? } or null
+      if (!str) return null;
+      const s = str.trim();
+
+      // Total: "O 220.5" / "U 220.5" / "Over 220.5" / "Under 220.5"
+      const ouM = s.match(/^(O(?:ver)?|U(?:nder)?)[\s]+([\d.]+)/i);
+      if (ouM) return { type: 'total', side: ouM[1][0].toUpperCase() === 'O' ? 'over' : 'under', line: parseFloat(ouM[2]) };
+
+      // Spread: "LAL +5.5" / "BOS -3" — spread values are < 30 pts in major sports
+      const spM = s.match(/^([A-Z]{2,6})\s+([+-][\d]+\.?[\d]*)(?:\s|\(|$)/i);
+      if (spM) {
+        const line = parseFloat(spM[2]);
+        if (Math.abs(line) >= 0.5 && Math.abs(line) < 35) {
+          return { type: 'spread', team: spM[1].toUpperCase(), line };
+        }
+      }
+
+      // ML: "LAL ML +120" / "LAL ML" / "LAL -150"
+      const mlM = s.match(/^([A-Z]{2,6})(?:\s+ML)?(?:\s+[+-]?\d+)?/i);
+      if (mlM) return { type: 'ml', team: mlM[1].toUpperCase() };
+
+      return null;
+    }
+
+    function agGrade(parsed, awayScore, homeScore, awayAbbr, homeAbbr) {
+      if (!parsed) return null;
+
+      if (parsed.type === 'total') {
+        const tot = awayScore + homeScore;
+        if (tot === parsed.line) return 'push';
+        return ((parsed.side === 'over') === (tot > parsed.line)) ? 'win' : 'loss';
+      }
+
+      // Match team to home or away
+      const t  = parsed.team;
+      const ha = awayAbbr.toUpperCase();
+      const hh = homeAbbr.toUpperCase();
+      let pickedScore, oppScore;
+
+      if (t === ha || ha.startsWith(t) || t.startsWith(ha)) {
+        pickedScore = awayScore; oppScore = homeScore;
+      } else if (t === hh || hh.startsWith(t) || t.startsWith(hh)) {
+        pickedScore = homeScore; oppScore = awayScore;
+      } else {
+        return null; // can't match
+      }
+
+      if (parsed.type === 'ml') {
+        if (pickedScore > oppScore) return 'win';
+        if (pickedScore < oppScore) return 'loss';
+        return 'push';
+      }
+
+      if (parsed.type === 'spread') {
+        const adj = pickedScore + parsed.line;
+        if (adj > oppScore) return 'win';
+        if (adj < oppScore) return 'loss';
+        return 'push';
+      }
+      return null;
+    }
+
+    function agDateStr(dateStr) {
+      // "Feb 26, 2026" → "20260226"
+      try {
+        const d = new Date(dateStr);
+        if (isNaN(d)) return null;
+        return d.getFullYear() + String(d.getMonth()+1).padStart(2,'0') + String(d.getDate()).padStart(2,'0');
+      } catch(e) { return null; }
+    }
+
+    async function agGradeSinglePick(pick) {
+      if (pick.result !== 'pending') return false;
+      const parsed = agParsePickStr(pick.pick);
+      if (!parsed) return false;
+
+      const sportPath = AG_SPORT_PATH[pick.sport] || AG_SPORT_PATH.nba;
+      const pickDate  = agDateStr(pick.date);
+      const todayD    = new Date();
+      const todayStr  = todayD.getFullYear() + String(todayD.getMonth()+1).padStart(2,'0') + String(todayD.getDate()).padStart(2,'0');
+      const ystD      = new Date(todayD - 86400000);
+      const ystStr    = ystD.getFullYear() + String(ystD.getMonth()+1).padStart(2,'0') + String(ystD.getDate()).padStart(2,'0');
+
+      const datesToTry = [...new Set([pickDate, todayStr, ystStr].filter(Boolean))];
+
+      for (const ds of datesToTry) {
+        let url = 'https://site.api.espn.com/apis/site/v2/sports/' + sportPath + '/scoreboard?dates=' + ds;
+        if (pick.sport === 'ncaab') url += '&groups=50&limit=300';
+
+        try {
+          const resp = await fetch(url);
+          const data = await resp.json();
+          const finalEvents = (data.events || []).filter(e => e.status?.type?.state === 'post');
+
+          for (const ev of finalEvents) {
+            const comp = ev.competitions[0];
+            const homeC = comp.competitors.find(c => c.homeAway === 'home');
+            const awayC = comp.competitors.find(c => c.homeAway === 'away');
+            if (!homeC || !awayC) continue;
+
+            const homeAbbr = (homeC.team.abbreviation || '').toUpperCase();
+            const awayAbbr = (awayC.team.abbreviation || '').toUpperCase();
+            const homeName = (homeC.team.shortDisplayName || homeC.team.displayName || '').toUpperCase();
+            const awayName = (awayC.team.shortDisplayName || awayC.team.displayName || '').toUpperCase();
+
+            // Match game using gameInfo field or pick team abbr
+            let matched = false;
+            const gi = (pick.gameInfo || '').toUpperCase();
+            if (gi && (gi.includes(homeAbbr) || gi.includes(homeName.split(' ').pop())) &&
+                      (gi.includes(awayAbbr) || gi.includes(awayName.split(' ').pop()))) matched = true;
+
+            // Also try matching via the team abbreviation parsed from the pick string
+            if (!matched && parsed.team && (parsed.team === homeAbbr || parsed.team === awayAbbr)) matched = true;
+
+            if (!matched) continue;
+
+            const hScore = parseInt(homeC.score) || 0;
+            const aScore = parseInt(awayC.score) || 0;
+            const result = agGrade(parsed, aScore, hScore, awayAbbr, homeAbbr);
+
+            if (result) {
+              pick.result    = result;
+              pick.autoGraded = true;
+              pick.gradedAt  = new Date().toISOString();
+              return true;
+            }
+          }
+        } catch(e) { /* network error, skip date */ }
+      }
+      return false;
+    }
+
+    async function runAutoGrader(silent) {
+      const pending = picks.filter(p => p.result === 'pending');
+      if (!pending.length) return;
+      let graded = 0;
+      for (const pick of pending) {
+        if (await agGradeSinglePick(pick)) graded++;
+      }
+      if (graded > 0) {
+        saveData();
+        renderPicks();
+        updateRecordTracker();
+        if (!silent) console.log('[YFC] Auto-graded ' + graded + ' pick(s)');
+      }
+    }
+
+    // ── END AUTO-GRADER ────────────────────────────────────────────────────────
+
     // ADMIN FAB
     function toggleFab() {
       const fab = document.getElementById('adminFab');
       fab.classList.toggle('fab-hidden');
+    }
+
+    function adminRunAutoGrader() {
+      if (!adminMode) return;
+      const btn = document.getElementById('adminAutoGradeBtn');
+      if (btn) { btn.textContent = '⏳ Checking...'; btn.disabled = true; }
+      runAutoGrader(false).then(() => {
+        if (btn) { btn.textContent = '⚡ Auto-Grade Picks'; btn.disabled = false; }
+      });
     }
 
     // SMOOTH SCROLL
