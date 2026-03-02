@@ -2420,7 +2420,7 @@
   <script>
     // CONFIG
     const ADMIN_PASSWORD = 'sharpedge';
-    const DATA_VERSION = 'v20'; // bump to force-reset localStorage on all browsers
+    const DATA_VERSION = 'v21'; // bump to force-reset localStorage on all browsers
 
     // SAMPLE DATA
     const SAMPLE_PICKS = [
@@ -3477,14 +3477,91 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
       });
     }
 
+    // ESPN core API sport-league paths (deeper data than site scoreboard)
+    const ESPN_CORE_PATHS = {
+      nba:'basketball/leagues/nba', nfl:'football/leagues/nfl',
+      nhl:'hockey/leagues/nhl',     mlb:'baseball/leagues/mlb',
+      ncaab:'basketball/leagues/mens-college-basketball',
+      ncaabaseball:'baseball/leagues/college-baseball',
+      ncaahockey:'hockey/leagues/mens-college-hockey',
+      ncaalacrosse:'lacrosse/leagues/mens-college-lacrosse',
+    };
+
+    function parseESPNOddsItems(oddsArr, g) {
+      // Works for both site-scoreboard odds[] and core-API inline items[]
+      const awSp=[], hmSp=[], awML=[], hmML=[], ov=[], un=[];
+      oddsArr.forEach(odds => {
+        if (odds.$ref && !odds.provider) return; // skip unresolved $ref items
+        const book   = (odds.provider && odds.provider.name) ? odds.provider.name : 'DraftKings';
+        const spread = odds.spread || 0;
+        const total  = odds.overUnder || 0;
+        const awO = odds.awayTeamOdds || {}, hmO = odds.homeTeamOdds || {};
+        if (spread) {
+          const awPt = awO.favorite ? -Math.abs(spread) : Math.abs(spread);
+          const hmPt = hmO.favorite ? -Math.abs(spread) : Math.abs(spread);
+          awSp.push({ book, point: awPt, price: awO.spreadOdds || -110 });
+          hmSp.push({ book, point: hmPt, price: hmO.spreadOdds || -110 });
+        }
+        if (awO.moneyLine) awML.push({ book, price: awO.moneyLine });
+        if (hmO.moneyLine) hmML.push({ book, price: hmO.moneyLine });
+        if (total) {
+          ov.push({ book, point: total, price: odds.overOdds  || -110 });
+          un.push({ book, point: total, price: odds.underOdds || -110 });
+        }
+      });
+      // If we got any real data, render it
+      const hasData = awSp.length || awML.length || ov.length;
+      if (hasData) {
+        renderLinesHTML({
+          awayAbbr:g.awayAbbr, homeAbbr:g.homeAbbr, awayName:g.awayName, homeName:g.homeName,
+          awaySpreadAll:sortOpts(awSp), homeSpreadAll:sortOpts(hmSp),
+          awayMLAll:sortOpts(awML),     homeMLAll:sortOpts(hmML),
+          overAll:sortOpts(ov),         underAll:sortOpts(un),
+        });
+        return true;
+      }
+      return false;
+    }
+
+    async function tryESPNCoreOdds(g, eventId, competitionId) {
+      const corePath = ESPN_CORE_PATHS[g.sport] || 'basketball/leagues/nba';
+      const url = 'https://sports.core.api.espn.com/v2/sports/'
+                + corePath + '/events/' + eventId
+                + '/competitions/' + competitionId + '/odds?limit=50';
+      try {
+        const resp = await fetch(url);
+        const data = await resp.json();
+        const items = data.items || [];
+
+        // Try inline items first (no $ref resolution needed)
+        if (parseESPNOddsItems(items, g)) return true;
+
+        // If all items are $ref links, resolve the first one (DraftKings typically priority=1)
+        const refs = items.filter(i => i.$ref && !i.provider);
+        if (refs.length) {
+          // Sort by URL — priority 1 (DraftKings) usually has lowest numeric ID
+          const sorted = refs.slice().sort((a,b) => a.$ref.localeCompare(b.$ref));
+          // Fetch up to 3 books in parallel
+          const fetched = await Promise.all(
+            sorted.slice(0, 3).map(r => fetch(r.$ref).then(x => x.json()).catch(() => null))
+          );
+          const valid = fetched.filter(Boolean);
+          if (valid.length && parseESPNOddsItems(valid, g)) return true;
+        }
+      } catch(e) { /* fall through */ }
+      return false;
+    }
+
     function fetchESPNLines(g) {
-      const paths = { nba:'basketball/nba', nfl:'football/nfl', nhl:'hockey/nhl', mlb:'baseball/mlb', ncaab:'basketball/mens-college-basketball', ncaabaseball:'baseball/college-baseball', ncaahockey:'hockey/mens-college-hockey', ncaalacrosse:'lacrosse/mens-college-lacrosse' };
+      const paths = { nba:'basketball/nba', nfl:'football/nfl', nhl:'hockey/nhl', mlb:'baseball/mlb',
+        ncaab:'basketball/mens-college-basketball', ncaabaseball:'baseball/college-baseball',
+        ncaahockey:'hockey/mens-college-hockey', ncaalacrosse:'lacrosse/mens-college-lacrosse' };
       const path = paths[g.sport] || 'basketball/nba';
       const url  = 'https://site.api.espn.com/apis/site/v2/sports/' + path + '/scoreboard'
                  + (g.sport === 'ncaab' ? '?groups=50&limit=300' : '');
       fetch(url)
         .then(r => r.json())
-        .then(data => {
+        .then(async data => {
           const ev = (data.events || []).find(e => {
             const aw = e.competitions[0].competitors.find(t => t.homeAway === 'away');
             const hm = e.competitions[0].competitors.find(t => t.homeAway === 'home');
@@ -3492,42 +3569,64 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
               && (aw.team.abbreviation === g.awayAbbr || aw.team.shortDisplayName === g.awayName)
               && (hm.team.abbreviation === g.homeAbbr || hm.team.shortDisplayName === g.homeName);
           });
-          if (!ev) { renderLinesHTML({ noData:true, awayAbbr:g.awayAbbr, homeAbbr:g.homeAbbr, awayName:g.awayName, homeName:g.homeName }); return; }
-          const oddsArr = ev.competitions[0].odds || [];
-          if (!oddsArr.length) { renderLinesHTML({ noData:true, awayAbbr:g.awayAbbr, homeAbbr:g.homeAbbr, awayName:g.awayName, homeName:g.homeName }); return; }
+          if (!ev) { showManualEntry(g); return; }
 
-          const awSp=[], hmSp=[], awML=[], hmML=[], ov=[], un=[];
-          oddsArr.forEach(odds => {
-            const book = (odds.provider && odds.provider.name) ? odds.provider.name : 'DraftKings';
-            const spread = odds.spread || 0, total = odds.overUnder || 0;
-            const awO = odds.awayTeamOdds || {}, hmO = odds.homeTeamOdds || {};
-            if (spread) {
-              const awPt = awO.favorite ? -Math.abs(spread) : Math.abs(spread);
-              const hmPt = hmO.favorite ? -Math.abs(spread) : Math.abs(spread);
-              awSp.push({ book, point: awPt, price: awO.spreadOdds || -110 });
-              hmSp.push({ book, point: hmPt, price: hmO.spreadOdds || -110 });
-            }
-            if (awO.moneyLine) awML.push({ book, price: awO.moneyLine });
-            if (hmO.moneyLine) hmML.push({ book, price: hmO.moneyLine });
-            if (total) {
-              ov.push({ book, point: total, price: odds.overOdds  || -110 });
-              un.push({ book, point: total, price: odds.underOdds || -110 });
-            }
-          });
-          renderLinesHTML({
-            awayAbbr:g.awayAbbr, homeAbbr:g.homeAbbr, awayName:g.awayName, homeName:g.homeName,
-            awaySpreadAll:sortOpts(awSp), homeSpreadAll:sortOpts(hmSp),
-            awayMLAll:sortOpts(awML), homeMLAll:sortOpts(hmML),
-            overAll:sortOpts(ov), underAll:sortOpts(un),
-          });
+          // Step 1: try site-scoreboard odds (fast, usually has big games)
+          const oddsArr = ev.competitions[0].odds || [];
+          if (oddsArr.length && parseESPNOddsItems(oddsArr, g)) return;
+
+          // Step 2: try ESPN core odds API (has odds for more games incl. smaller college)
+          const evId   = ev.id;
+          const compId = ev.competitions[0].id || ev.id;
+          const gotLines = await tryESPNCoreOdds(g, evId, compId);
+          if (gotLines) return;
+
+          // Step 3: no automated lines available — show manual entry
+          showManualEntry(g);
         })
-        .catch(() => renderLinesHTML({ noData:true, awayAbbr:g.awayAbbr, homeAbbr:g.homeAbbr, awayName:g.awayName, homeName:g.homeName }));
+        .catch(() => showManualEntry(g));
+    }
+
+    function showManualEntry(g) {
+      // Show manual pick entry when no automated odds are available
+      document.getElementById('linesContent').innerHTML = `
+        <div style="margin-bottom:10px;padding:10px 12px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:8px;font-size:12px;color:#9ca3af;">
+          ⚠️ No automated odds found for this game — enter the line you see on DraftKings below.
+        </div>
+        <div class="lines-type-label" style="margin-top:0;">Enter Line</div>
+        <input id="manualPickInput" placeholder="e.g. ${(g||{}).awayAbbr||'AWAY'} +5.5 (-110)  or  O 140.5 (-110)"
+          style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.18);border-radius:8px;padding:11px 14px;color:#f9fafb;font-size:15px;font-weight:600;outline:none;margin-bottom:10px;" />
+        <div style="display:flex;gap:8px;margin-bottom:4px;">
+          <select id="manualPickBook" style="flex:1;background:#1a1f2e;border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:9px 12px;color:#f9fafb;font-size:13px;">
+            <option value="DraftKings">DraftKings</option>
+            <option value="FanDuel">FanDuel</option>
+            <option value="Caesars">Caesars</option>
+            <option value="Fanatics">Fanatics</option>
+            <option value="BetMGM">BetMGM</option>
+          </select>
+          <button onclick="confirmManualLine()" style="flex:1;padding:9px 14px;background:rgba(0,232,122,0.15);border:1px solid rgba(0,232,122,0.4);border-radius:8px;color:#00e87a;font-size:14px;font-weight:700;cursor:pointer;">
+            Add Pick →
+          </button>
+        </div>`;
+      document.getElementById('bestOddsNote').style.display = 'none';
+    }
+
+    function confirmManualLine() {
+      const inp  = document.getElementById('manualPickInput');
+      const book = document.getElementById('manualPickBook');
+      if (!inp || !inp.value.trim()) {
+        if (inp) inp.style.borderColor = 'rgba(239,68,68,0.7)';
+        return;
+      }
+      selectedLineData.pickValue = inp.value.trim();
+      selectedLineData.book      = book ? book.value : 'DraftKings';
+      confirmLinePick();
     }
 
     function renderLinesHTML(d) {
       currentLines = [];
       if (d.noData) {
-        document.getElementById('linesContent').innerHTML = '<div class="lines-loading">No lines posted yet — check back closer to game time.</div>';
+        showManualEntry(currentPickGame || {}); return;
         return;
       }
 
