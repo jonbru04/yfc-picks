@@ -1893,6 +1893,24 @@
     }
     /* ── END LINES PANEL ──────────────────────────────────── */
 
+    /* ── LIVE SCORE TRACKER ───────────────────────────────── */
+    @keyframes livePulse { 0%,100%{opacity:1} 50%{opacity:0.25} }
+    .live-dot { animation: livePulse 1.4s ease-in-out infinite; display:inline-block; font-size:9px; vertical-align:middle; }
+    .live-strip {
+      display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+      background:rgba(239,68,68,0.07); border:1px solid rgba(239,68,68,0.22);
+      border-radius:7px; padding:6px 10px; margin-top:10px; font-size:12px;
+    }
+    .live-strip.live-final {
+      background:rgba(107,114,128,0.07); border-color:rgba(107,114,128,0.2);
+    }
+    .live-label { color:#ef4444; font-weight:800; font-size:10px; letter-spacing:.1em; }
+    .live-label.final { color:#9ca3af; }
+    .live-detail { color:#d1d5db; font-size:11px; }
+    .live-score-val { color:#f9fafb; font-weight:800; font-size:14px; margin-left:auto; letter-spacing:.02em; }
+    .live-bases { font-size:11px; color:#f59e0b; letter-spacing:2px; }
+    /* ── END LIVE SCORE TRACKER ───────────────────────────── */
+
   </style>
 </head>
 <body>
@@ -2420,7 +2438,7 @@
   <script>
     // CONFIG
     const ADMIN_PASSWORD = 'sharpedge';
-    const DATA_VERSION = 'v23'; // bump to force-reset localStorage on all browsers
+    const DATA_VERSION = 'v24'; // bump to force-reset localStorage on all browsers
 
     // SAMPLE DATA
     const SAMPLE_PICKS = [
@@ -2827,6 +2845,8 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
         </div>
 
         <div class="teaser-text">${pick.teaser}</div>
+
+        <div id="liveStrip_${pick.id}">${renderLiveStrip(pick)}</div>
 
         ${isRevealed && pick.analysis ? `<div style="font-size: 13px; color: #d1d5db; background: rgba(0, 0, 0, 0.2); padding: 14px; border-radius: 8px; margin: 16px 0; line-height:1.7;">
           <strong style="color:#9ca3af;font-size:11px;text-transform:uppercase;letter-spacing:.08em;">Full Analysis</strong><br><br>${pick.analysis.replace(/\n\n/g, '<br><br>')}
@@ -3902,6 +3922,119 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
     }
 
     // ── END AUTO-GRADER ────────────────────────────────────────────────────────
+
+    // ── LIVE SCORE TRACKER ─────────────────────────────────────────────────────
+    const liveFeed = {}; // key: sport_AWAY_HOME → live state object
+
+    function pickGameKeys(pick) {
+      // gameInfo format: "LIP @ TOL — Mon, Mar 2"
+      const m = (pick.gameInfo || '').match(/^([A-Z0-9]+)\s*@\s*([A-Z0-9]+)/i);
+      if (!m) return null;
+      const away = m[1].toUpperCase(), home = m[2].toUpperCase();
+      return { away, home, key: (pick.sport||'') + '_' + away + '_' + home };
+    }
+
+    function fmtBases(sit) {
+      // Returns base indicators e.g. "● ◦ ◦" for runner on first only
+      return [sit.onFirst, sit.onSecond, sit.onThird].map(b => b ? '●' : '◦').join(' ');
+    }
+
+    function renderLiveStrip(pick) {
+      if (pick.result !== 'pending') return '';
+      const keys = pickGameKeys(pick);
+      if (!keys) return '';
+      const ld = liveFeed[keys.key];
+      if (!ld) return '';
+
+      const sp = pick.sport || '';
+      if (ld.state === 'in') {
+        let detail = '';
+        if (sp === 'mlb' || sp === 'ncaabaseball') {
+          const sit = ld.situation || {};
+          const outs = sit.outs !== undefined ? sit.outs + ' out' + (sit.outs !== 1 ? 's' : '') : '';
+          const bases = fmtBases(sit);
+          detail = [ld.statusDetail, outs].filter(Boolean).join(' · ')
+                 + (bases ? ' <span class="live-bases">' + bases + '</span>' : '');
+        } else if (sp === 'nba' || sp === 'ncaab') {
+          const q = ld.period ? 'Q' + ld.period : '';
+          detail = [q, ld.clock].filter(Boolean).join(' ');
+        } else if (sp === 'nfl') {
+          const q = ld.period ? 'Q' + ld.period : '';
+          const dd = (ld.situation || {}).downDistanceText || '';
+          detail = [q, ld.clock, dd].filter(Boolean).join(' · ');
+        } else if (sp === 'nhl' || sp === 'ncaahockey') {
+          const p = ld.period ? 'P' + ld.period : '';
+          detail = [p, ld.clock].filter(Boolean).join(' ');
+        } else {
+          detail = ld.statusDetail || '';
+        }
+        return `<div class="live-strip">
+          <span class="live-dot">🔴</span>
+          <span class="live-label">LIVE</span>
+          ${detail ? `<span class="live-detail">${detail}</span>` : ''}
+          <span class="live-score-val">${keys.away} ${ld.awayScore} <span style="color:#6b7280;font-weight:400">–</span> ${ld.homeScore} ${keys.home}</span>
+        </div>`;
+      }
+      if (ld.state === 'post') {
+        const awS = parseInt(ld.awayScore)||0, hmS = parseInt(ld.homeScore)||0;
+        const winner = awS > hmS ? keys.away : (hmS > awS ? keys.home : null);
+        return `<div class="live-strip live-final">
+          <span class="live-label final">FINAL</span>
+          <span class="live-score-val">${keys.away} ${ld.awayScore} <span style="color:#6b7280;font-weight:400">–</span> ${ld.homeScore} ${keys.home}</span>
+        </div>`;
+      }
+      return '';
+    }
+
+    async function pollLiveScores() {
+      const pending = picks.filter(p => p.result === 'pending' && p.sport);
+      if (!pending.length) return;
+      const sports = [...new Set(pending.map(p => p.sport))];
+      const paths = {
+        nba:'basketball/nba', nfl:'football/nfl', nhl:'hockey/nhl', mlb:'baseball/mlb',
+        ncaab:'basketball/mens-college-basketball', ncaabaseball:'baseball/college-baseball',
+        ncaahockey:'hockey/mens-college-hockey', ncaalacrosse:'lacrosse/mens-college-lacrosse'
+      };
+      for (const sport of sports) {
+        const path = paths[sport]; if (!path) continue;
+        try {
+          const params = sport === 'ncaab' ? '?groups=50&limit=300' : '';
+          const data = await fetch('https://site.api.espn.com/apis/site/v2/sports/' + path + '/scoreboard' + params).then(r => r.json());
+          (data.events || []).forEach(ev => {
+            const comp = ev.competitions[0];
+            const awC = comp.competitors.find(t => t.homeAway === 'away');
+            const hmC = comp.competitors.find(t => t.homeAway === 'home');
+            if (!awC || !hmC) return;
+            const away = awC.team.abbreviation.toUpperCase();
+            const home = hmC.team.abbreviation.toUpperCase();
+            const key  = sport + '_' + away + '_' + home;
+            const st   = ev.status;
+            liveFeed[key] = {
+              state:        st.type.state,
+              statusDetail: st.type.detail,
+              clock:        st.displayClock !== '0:00' ? st.displayClock : '',
+              period:       st.period,
+              awayScore:    awC.score || '0',
+              homeScore:    hmC.score || '0',
+              situation:    comp.situation || {},
+            };
+          });
+        } catch(e) { /* network error — skip */ }
+      }
+      updateLiveStrips();
+    }
+
+    function updateLiveStrips() {
+      picks.forEach(p => {
+        const el = document.getElementById('liveStrip_' + p.id);
+        if (el) el.innerHTML = renderLiveStrip(p);
+      });
+    }
+
+    // Kick off live polling
+    setTimeout(() => pollLiveScores(), 1500);
+    setInterval(() => pollLiveScores(), 30000);
+    // ── END LIVE SCORE TRACKER ─────────────────────────────────────────────────
 
     // ADMIN FAB
     function toggleFab() {
