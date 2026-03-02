@@ -1828,6 +1828,60 @@
       font-size: 14px; cursor: pointer; display: none;
     }
     /* ── END GAME PICKER ──────────────────────────────────── */
+
+    /* ── LINES PANEL ─────────────────────────────────────── */
+    .lines-panel { margin-top: 0; }
+    .lines-back-btn {
+      background: none; border: none; color: #9ca3af; cursor: pointer;
+      font-size: 13px; padding: 0 0 12px 0; display: flex; align-items: center; gap: 6px;
+    }
+    .lines-back-btn:hover { color: #f9fafb; }
+    .lines-game-title {
+      font-size: 16px; font-weight: 700; color: #f9fafb; margin-bottom: 4px;
+    }
+    .lines-game-time {
+      font-size: 12px; color: #6b7280; margin-bottom: 16px;
+    }
+    .lines-type-label {
+      font-size: 11px; font-weight: 700; color: #9ca3af;
+      text-transform: uppercase; letter-spacing: .08em; margin: 12px 0 6px;
+    }
+    .lines-row {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 4px;
+    }
+    .lines-row.three-col { grid-template-columns: 1fr 1fr 1fr; }
+    .line-btn {
+      background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px; padding: 10px 12px; cursor: pointer; text-align: left;
+      transition: all .2s; position: relative;
+    }
+    .line-btn:hover, .line-btn.selected {
+      background: rgba(0,232,122,0.1); border-color: rgba(0,232,122,0.5);
+    }
+    .line-btn .line-team { font-size: 12px; color: #9ca3af; margin-bottom: 3px; }
+    .line-btn .line-value { font-size: 15px; font-weight: 700; color: #f9fafb; }
+    .line-btn .line-odds  { font-size: 12px; color: #6b7280; margin-top: 2px; }
+    .line-btn .best-book-badge {
+      position: absolute; top: 6px; right: 6px;
+      font-size: 10px; font-weight: 700; color: #f59e0b;
+      background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.3);
+      border-radius: 4px; padding: 1px 5px;
+    }
+    .lines-loading { text-align: center; color: #6b7280; padding: 30px; font-size: 14px; }
+    .lines-confirm-btn {
+      width: 100%; margin-top: 16px; padding: 12px;
+      background: rgba(0,232,122,0.15); border: 1px solid rgba(0,232,122,0.4);
+      border-radius: 10px; color: #00e87a; font-weight: 700; font-size: 15px;
+      cursor: pointer; display: none;
+    }
+    .lines-confirm-btn:hover { background: rgba(0,232,122,0.25); }
+    .best-odds-note {
+      margin-top: 12px; padding: 10px 12px;
+      background: rgba(245,158,11,0.06); border: 1px solid rgba(245,158,11,0.2);
+      border-radius: 8px; font-size: 12px; color: #9ca3af; line-height: 1.6;
+    }
+    /* ── END LINES PANEL ──────────────────────────────────── */
+
   </style>
 </head>
 <body>
@@ -2351,7 +2405,7 @@
   <script>
     // CONFIG
     const ADMIN_PASSWORD = 'sharpedge';
-    const DATA_VERSION = 'v14'; // bump to force-reset localStorage on all browsers
+    const DATA_VERSION = 'v16'; // bump to force-reset localStorage on all browsers
 
     // SAMPLE DATA
     const SAMPLE_PICKS = [
@@ -3279,6 +3333,276 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
         setTimeout(() => document.getElementById('pickTeaser').focus(), 100);
       }, 150);
     }
+
+    // ── LINES PANEL ──────────────────────────────────────────────────────────
+    let ODDS_API_KEY = localStorage.getItem('oddsApiKey') || '';
+    let selectedLineData = null;  // {pick, book, sport, gameInfo}
+    let currentLines = [];         // line option objects for index-based onclick
+
+    const ODDS_API_SPORT_MAP = {
+      nba:   'basketball_nba',
+      nfl:   'americanfootball_nfl',
+      nhl:   'icehockey_nhl',
+      mlb:   'baseball_mlb',
+      ncaab: 'basketball_ncaab',
+    };
+
+    function showGameList() {
+      document.getElementById('linesView').style.display = 'none';
+      document.getElementById('gameListView').style.display = 'block';
+      document.getElementById('gamePickerTabs').style.display = 'flex';
+      document.getElementById('parlaySlip') && (document.getElementById('parlaySlip').style.display = parlayMode ? 'block' : 'none');
+    }
+
+    function selectGameByIdx(i) {
+      const g = currentGameList[i];
+      if (!g) return;
+      // Switch to lines view
+      document.getElementById('gameListView').style.display = 'none';
+      document.getElementById('gamePickerTabs').style.display = 'none';
+      if (document.getElementById('parlaySlip')) document.getElementById('parlaySlip').style.display = 'none';
+      document.getElementById('linesGameTitle').textContent = g.awayName + ' @ ' + g.homeName;
+      document.getElementById('linesGameTime').textContent = g.time + (g.state !== 'pre' ? ' · LIVE' : '');
+      document.getElementById('linesConfirmBtn').style.display = 'none';
+      document.getElementById('bestOddsNote').style.display = 'none';
+      document.getElementById('linesContent').innerHTML = '<div class="lines-loading">Fetching lines...</div>';
+      document.getElementById('linesView').style.display = 'block';
+      selectedLineData = { sport: g.sport, gameInfo: g.gameInfo, awayName: g.awayName, homeName: g.homeName, awayAbbr: g.awayAbbr, homeAbbr: g.homeAbbr };
+      fetchLines(g);
+    }
+
+    function fetchLines(g) {
+      if (!ODDS_API_KEY) {
+        renderESPNLines(g);
+        return;
+      }
+      const sport = ODDS_API_SPORT_MAP[g.sport] || 'basketball_nba';
+      const url = 'https://api.the-odds-api.com/v4/sports/' + sport + '/odds/?apiKey=' + ODDS_API_KEY
+        + '&regions=us&markets=h2h,spreads,totals&oddsFormat=american&bookmakers=draftkings,fanduel,betmgm,caesars,pointsbet';
+      fetch(url)
+        .then(r => r.json())
+        .then(data => {
+          const match = findMatchingGame(data, g);
+          if (match) renderOddsAPILines(match, g);
+          else renderESPNLines(g);
+        })
+        .catch(() => renderESPNLines(g));
+    }
+
+    function findMatchingGame(data, g) {
+      if (!data || !Array.isArray(data)) return null;
+      const awayLower = g.awayName.toLowerCase();
+      const homeLower = g.homeName.toLowerCase();
+      return data.find(ev => {
+        const ha = ev.away_team.toLowerCase();
+        const hh = ev.home_team.toLowerCase();
+        return (ha.includes(awayLower.split(' ').pop()) || awayLower.includes(ha.split(' ').pop()))
+          && (hh.includes(homeLower.split(' ').pop()) || homeLower.includes(hh.split(' ').pop()));
+      });
+    }
+
+    function renderOddsAPILines(event, g) {
+      const books = event.bookmakers || [];
+      // Collect all spreads, h2h, totals per book
+      let spreads = {}, h2h = {}, totals = {};
+      books.forEach(book => {
+        const name = book.title;
+        book.markets.forEach(mkt => {
+          if (mkt.key === 'spreads') {
+            mkt.outcomes.forEach(o => {
+              if (!spreads[o.name]) spreads[o.name] = [];
+              spreads[o.name].push({ book: name, point: o.point, price: o.price });
+            });
+          }
+          if (mkt.key === 'h2h') {
+            mkt.outcomes.forEach(o => {
+              if (!h2h[o.name]) h2h[o.name] = [];
+              h2h[o.name].push({ book: name, price: o.price });
+            });
+          }
+          if (mkt.key === 'totals') {
+            mkt.outcomes.forEach(o => {
+              if (!totals[o.name]) totals[o.name] = [];
+              totals[o.name].push({ book: name, point: o.point, price: o.price });
+            });
+          }
+        });
+      });
+
+      // Find best (highest value) for each side
+      const bestSpread = (team) => {
+        const opts = spreads[team] || [];
+        if (!opts.length) return null;
+        // Best spread = favorite: least negative price / largest point; dog: most positive
+        const isFav = opts[0].point < 0;
+        return opts.sort((a,b) => isFav ? b.price - a.price : b.price - a.price)[0];
+      };
+      const bestML = (team) => {
+        const opts = h2h[team] || [];
+        return opts.sort((a,b) => b.price - a.price)[0] || null;
+      };
+      const bestTotal = (side) => {
+        const opts = totals[side] || [];
+        return opts.sort((a,b) => b.price - a.price)[0] || null;
+      };
+
+      const awaySpread = bestSpread(event.away_team);
+      const homeSpread = bestSpread(event.home_team);
+      const awayML = bestML(event.away_team);
+      const homeML = bestML(event.home_team);
+      const over   = bestTotal('Over');
+      const under  = bestTotal('Under');
+
+      renderLinesHTML({
+        awayAbbr: g.awayAbbr, homeAbbr: g.homeAbbr,
+        awayName: event.away_team, homeName: event.home_team,
+        awaySpread, homeSpread, awayML, homeML, over, under,
+        multiBook: true
+      });
+    }
+
+    function renderESPNLines(g) {
+      // Fallback: use ESPN / DraftKings data
+      const sportMap = { nba:'nba', nfl:'nfl', nhl:'nhl', mlb:'mlb', ncaab:'mens-college-basketball' };
+      const league = sportMap[g.sport] || 'nba';
+      const base = g.sport === 'ncaab'
+        ? 'https://site.api.espn.com/apis/site/v2/sports/basketball/' + league + '/scoreboard?groups=50&limit=300'
+        : 'https://site.api.espn.com/apis/site/v2/sports/' + (g.sport==='nba'?'basketball':g.sport==='nfl'?'football':g.sport==='nhl'?'hockey':'baseball') + '/' + league + '/scoreboard';
+      fetch(base)
+        .then(r => r.json())
+        .then(data => {
+          const ev = (data.events||[]).find(e => {
+            const comps = e.competitions[0].competitors;
+            const away = comps.find(t=>t.homeAway==='away');
+            const home = comps.find(t=>t.homeAway==='home');
+            return away && home &&
+              (away.team.abbreviation===g.awayAbbr || away.team.shortDisplayName===g.awayName) &&
+              (home.team.abbreviation===g.homeAbbr || home.team.shortDisplayName===g.homeName);
+          });
+          if (!ev) { renderLinesHTML({ noData: true, awayAbbr: g.awayAbbr, homeAbbr: g.homeAbbr, awayName: g.awayName, homeName: g.homeName }); return; }
+          const odds = (ev.competitions[0].odds||[])[0];
+          if (!odds) { renderLinesHTML({ noData: true, awayAbbr: g.awayAbbr, homeAbbr: g.homeAbbr, awayName: g.awayName, homeName: g.homeName }); return; }
+          const spread = odds.spread || 0;
+          const total  = odds.overUnder || 0;
+          const homeML = odds.homeTeamOdds?.moneyLine;
+          const awayML = odds.awayTeamOdds?.moneyLine;
+          const homeSpreadPts = odds.homeTeamOdds?.favorite ? -Math.abs(spread) : Math.abs(spread);
+          const awaySpreadPts = odds.awayTeamOdds?.favorite ? -Math.abs(spread) : Math.abs(spread);
+          renderLinesHTML({
+            awayAbbr: g.awayAbbr, homeAbbr: g.homeAbbr,
+            awayName: g.awayName, homeName: g.homeName,
+            awaySpread: awaySpreadPts ? { book:'DraftKings', point: awaySpreadPts, price:-110 } : null,
+            homeSpread: homeSpreadPts ? { book:'DraftKings', point: homeSpreadPts, price:-110 } : null,
+            awayML: awayML ? { book:'DraftKings', price: awayML } : null,
+            homeML: homeML ? { book:'DraftKings', price: homeML } : null,
+            over:  total ? { book:'DraftKings', point: total, price:-110 } : null,
+            under: total ? { book:'DraftKings', point: total, price:-110 } : null,
+            multiBook: false
+          });
+        })
+        .catch(() => renderLinesHTML({ noData: true, awayAbbr: g.awayAbbr, homeAbbr: g.homeAbbr, awayName: g.awayName, homeName: g.homeName }));
+    }
+
+    function fmtPrice(p) {
+      if (!p && p !== 0) return '';
+      return p > 0 ? '+' + p : '' + p;
+    }
+
+    function lineCard(teamLabel, value, price, book, id, multiBook, idx) {
+      const bestBadge = multiBook ? '<span class="best-book-badge">' + book + '</span>' : '';
+      return '<div class="line-btn" id="lb_' + id + '" onclick="selectLineByIdx(' + idx + ')">'
+        + bestBadge
+        + '<div class="line-team">' + teamLabel + '</div>'
+        + '<div class="line-value">' + value + '</div>'
+        + '<div class="line-odds">' + fmtPrice(price) + (multiBook ? '' : ' · DraftKings') + '</div>'
+        + '</div>';
+    }
+
+    function selectLineByIdx(idx) {
+      const ld = currentLines[idx];
+      if (!ld) return;
+      document.querySelectorAll('.line-btn').forEach(b => b.classList.remove('selected'));
+      document.getElementById('lb_' + ld.id)?.classList.add('selected');
+      selectedLineData.pickValue = ld.value;
+      selectedLineData.book = ld.book;
+      document.getElementById('linesConfirmBtn').style.display = 'block';
+      document.getElementById('linesConfirmBtn').textContent = 'Post: ' + ld.value + ' · ' + ld.book + ' →';
+    }
+
+    function renderLinesHTML(d) {
+      currentLines = [];   // reset line options
+      if (d.noData) {
+        document.getElementById('linesContent').innerHTML =
+          '<div class="lines-loading">No lines available yet — check back closer to game time.</div>';
+        return;
+      }
+      let html = '';
+      // Spread
+      if (d.awaySpread || d.homeSpread) {
+        html += '<div class="lines-type-label">Spread</div><div class="lines-row">';
+        if (d.awaySpread) {
+          const v = d.awayAbbr + ' ' + fmtPrice(d.awaySpread.point);
+          currentLines.push({id:'as', value: v + ' (' + fmtPrice(d.awaySpread.price) + ')', book: d.awaySpread.book});
+          html += lineCard(d.awayAbbr, v, d.awaySpread.price, d.awaySpread.book, 'as', d.multiBook, currentLines.length-1);
+        }
+        if (d.homeSpread) {
+          const v = d.homeAbbr + ' ' + fmtPrice(d.homeSpread.point);
+          currentLines.push({id:'hs', value: v + ' (' + fmtPrice(d.homeSpread.price) + ')', book: d.homeSpread.book});
+          html += lineCard(d.homeAbbr, v, d.homeSpread.price, d.homeSpread.book, 'hs', d.multiBook, currentLines.length-1);
+        }
+        html += '</div>';
+      }
+      // ML
+      if (d.awayML || d.homeML) {
+        html += '<div class="lines-type-label">Moneyline</div><div class="lines-row">';
+        if (d.awayML) {
+          const v = d.awayAbbr + ' ML ' + fmtPrice(d.awayML.price);
+          currentLines.push({id:'aml', value: v, book: d.awayML.book});
+          html += lineCard(d.awayAbbr, fmtPrice(d.awayML.price), null, d.awayML.book, 'aml', d.multiBook, currentLines.length-1);
+        }
+        if (d.homeML) {
+          const v = d.homeAbbr + ' ML ' + fmtPrice(d.homeML.price);
+          currentLines.push({id:'hml', value: v, book: d.homeML.book});
+          html += lineCard(d.homeAbbr, fmtPrice(d.homeML.price), null, d.homeML.book, 'hml', d.multiBook, currentLines.length-1);
+        }
+        html += '</div>';
+      }
+      // Total
+      if (d.over || d.under) {
+        html += '<div class="lines-type-label">Total</div><div class="lines-row">';
+        if (d.over) {
+          const v = 'O ' + d.over.point;
+          currentLines.push({id:'ov', value: v + ' (' + fmtPrice(d.over.price) + ')', book: d.over.book});
+          html += lineCard('Over', v, d.over.price, d.over.book, 'ov', d.multiBook, currentLines.length-1);
+        }
+        if (d.under) {
+          const v = 'U ' + d.under.point;
+          currentLines.push({id:'un', value: v + ' (' + fmtPrice(d.under.price) + ')', book: d.under.book});
+          html += lineCard('Under', v, d.under.price, d.under.book, 'un', d.multiBook, currentLines.length-1);
+        }
+        html += '</div>';
+      }
+      if (!html) html = '<div class="lines-loading">No lines posted yet.</div>';
+      document.getElementById('linesContent').innerHTML = html;
+      document.getElementById('bestOddsNote').style.display = 'block';
+    }
+
+
+
+    function confirmLinePick() {
+      if (!selectedLineData || !selectedLineData.pickValue) return;
+      document.getElementById('pickSport').value    = selectedLineData.sport;
+      document.getElementById('pickGameInfo').value = selectedLineData.gameInfo;
+      document.getElementById('pickValue').value    = selectedLineData.pickValue;
+      document.getElementById('pickBook').value     = selectedLineData.book || '';
+      closeModal('gamePickerModal');
+      setTimeout(() => {
+        document.getElementById('pickComposerModal').classList.add('active');
+        setTimeout(() => document.getElementById('pickTeaser').focus(), 100);
+      }, 150);
+    }
+    // ── END LINES PANEL ───────────────────────────────────────────────────────
+
     // ── END GAME PICKER ───────────────────────────────────────────────────────
 
     // ADMIN FAB
@@ -3343,8 +3667,25 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
         <div class="game-picker-tab" onclick="switchSport('nhl', this)">🏒 NHL</div>
         <div class="game-picker-tab" onclick="switchSport('mlb', this)">⚾ MLB</div>
       </div>
-      <div class="game-picker-list" id="gamePickerList">
-        <div class="game-picker-loading">Loading games...</div>
+      <!-- Game list view -->
+      <div id="gameListView">
+        <div class="game-picker-list" id="gamePickerList">
+          <div class="game-picker-loading">Loading games...</div>
+        </div>
+      </div>
+
+      <!-- Lines view (shown after game selected) -->
+      <div id="linesView" style="display:none;" class="lines-panel">
+        <button class="lines-back-btn" onclick="showGameList()">&#8592; Back to games</button>
+        <div class="lines-game-title" id="linesGameTitle"></div>
+        <div class="lines-game-time" id="linesGameTime"></div>
+        <div id="linesContent"><div class="lines-loading">Fetching lines...</div></div>
+        <button class="lines-confirm-btn" id="linesConfirmBtn" onclick="confirmLinePick()">
+          Post This Pick &#8594;
+        </button>
+        <div class="best-odds-note" id="bestOddsNote" style="display:none;">
+          &#128;&#136; Always shop lines: <strong style="color:#f59e0b;">DraftKings · FanDuel · BetMGM · Caesars</strong> — a half-point on a key number can flip a result.
+        </div>
       </div>
     </div>
   </div>
