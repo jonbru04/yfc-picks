@@ -2266,6 +2266,8 @@
       <div class="admin-fab-item" onclick="openPickComposer(); toggleFab()">✏️ Manual Pick</div>
       <div class="admin-fab-item" onclick="openPostComposer(); toggleFab()">✏️ New Post</div>
       <div class="admin-fab-item" onclick="smoothScroll('#picks'); toggleFab()">📊 View All Picks</div>
+      <div class="admin-fab-item" onclick="exportPicks(); toggleFab()">💾 Export Picks</div>
+      <div class="admin-fab-item" onclick="importPicksPrompt(); toggleFab()">📂 Import Picks</div>
     </div>
     <button class="admin-fab-main" onclick="toggleFab()" title="Admin Quick Actions">+</button>
   </div>
@@ -2438,7 +2440,7 @@
   <script>
     // CONFIG
     const ADMIN_PASSWORD = 'sharpedge';
-    const DATA_VERSION = 'v24'; // bump to force-reset localStorage on all browsers
+    const DATA_VERSION = 'v25'; // SCHEMA version only — never bump for feature updates, only if pick data structure breaks
 
     // SAMPLE DATA
     const SAMPLE_PICKS = [
@@ -2668,15 +2670,27 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
 
     // DATA MANAGEMENT
     function loadData() {
-      // Version check — clears stale localStorage so updated picks always show
-      if (localStorage.getItem('dataVersion') !== DATA_VERSION) {
+      const storedVer = localStorage.getItem('dataVersion');
+
+      // Only wipe data on a completely fresh install (no version stored at all).
+      // Feature updates (live tracker, line fallbacks, UI tweaks, etc.) must NEVER
+      // bump DATA_VERSION — only bump it if the pick object schema itself breaks.
+      if (!storedVer) {
         localStorage.removeItem('communityPicks');
         localStorage.removeItem('communityPosts');
-        localStorage.setItem('dataVersion', DATA_VERSION);
       }
+      localStorage.setItem('dataVersion', DATA_VERSION);
 
+      // Load picks — fall back to backup, then sample data
       const savedPicks = localStorage.getItem('communityPicks');
-      picks = savedPicks ? JSON.parse(savedPicks) : SAMPLE_PICKS;
+      if (savedPicks) {
+        picks = JSON.parse(savedPicks);
+      } else {
+        // Try the rolling backup before giving up
+        const backup = localStorage.getItem('yfcPicksBackup');
+        picks = backup ? JSON.parse(backup) : SAMPLE_PICKS;
+        if (backup) localStorage.setItem('communityPicks', backup); // restore from backup
+      }
 
       const savedPosts = localStorage.getItem('communityPosts');
       posts = savedPosts ? JSON.parse(savedPosts) : SAMPLE_POSTS;
@@ -2687,6 +2701,8 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
 
     function saveData() {
       localStorage.setItem('communityPicks', JSON.stringify(picks));
+      // Rolling backup — stored under a separate key that is NEVER wiped
+      localStorage.setItem('yfcPicksBackup', JSON.stringify(picks));
       localStorage.setItem('communityPosts', JSON.stringify(posts));
       localStorage.setItem('alertSubscribers', JSON.stringify(alertSubscribers));
     }
@@ -4049,6 +4065,41 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
       runAutoGrader(false).then(() => {
         if (btn) { btn.textContent = '⚡ Auto-Grade Picks'; btn.disabled = false; }
       });
+    }
+
+    function exportPicks() {
+      if (!adminMode) return;
+      const blob = new Blob([JSON.stringify(picks, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'yfc-picks-backup-' + new Date().toISOString().slice(0,10) + '.json';
+      a.click();
+    }
+
+    function importPicksPrompt() {
+      if (!adminMode) return;
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.json';
+      input.onchange = e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+          try {
+            const imported = JSON.parse(ev.target.result);
+            if (!Array.isArray(imported)) { alert('Invalid backup file.'); return; }
+            if (!confirm('Replace all current picks with ' + imported.length + ' imported picks?')) return;
+            picks = imported;
+            saveData();
+            renderPicks();
+            updateRecordTracker();
+            alert('✅ ' + imported.length + ' picks restored.');
+          } catch { alert('Could not read file.'); }
+        };
+        reader.readAsText(file);
+      };
+      input.click();
     }
 
     // SMOOTH SCROLL
