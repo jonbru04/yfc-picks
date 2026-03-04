@@ -3311,26 +3311,39 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
       loadGamesForSport(sport);
     }
 
-    function loadGamesForSport(sport) {
-      const list = document.getElementById('gamePickerList');
-      if (pickerCache[sport]) { currentGameList = pickerCache[sport]; renderGameList(pickerCache[sport], sport); return; }
-      list.innerHTML = '<div class="game-picker-loading">Loading ' + SPORT_CONFIG[sport].label + ' games...</div>';
-      const cfg = SPORT_CONFIG[sport];
-      const qs  = cfg.params ? '?' + cfg.params : '';
-      fetch('https://site.api.espn.com/apis/site/v2/sports/' + cfg.espn + '/scoreboard' + qs)
-        .then(r => r.json())
-        .then(data => {
-          const games = parseESPNGames(data, sport);
-          pickerCache[sport] = games;
-          currentGameList = games;
-          renderGameList(games, sport);
-        })
-        .catch(() => {
-          list.innerHTML = '<div class="game-picker-empty">No ' + SPORT_CONFIG[sport].label + ' games found today.</div>';
-        });
+    function espnDateStr(offset) {
+      const d = new Date(Date.now() + (offset || 0) * 86400000);
+      return d.getFullYear() + String(d.getMonth()+1).padStart(2,'0') + String(d.getDate()).padStart(2,'0');
     }
 
-    function parseESPNGames(data, sport) {
+    function loadGamesForSport(sport) {
+      const list = document.getElementById('gamePickerList');
+      // Always re-fetch — never use stale cache from a previous session
+      list.innerHTML = '<div class="game-picker-loading">Loading ' + SPORT_CONFIG[sport].label + ' games...</div>';
+      const cfg     = SPORT_CONFIG[sport];
+      const extra   = cfg.params ? '&' + cfg.params : '';
+      const baseUrl = 'https://site.api.espn.com/apis/site/v2/sports/' + cfg.espn + '/scoreboard';
+      const todayUrl    = baseUrl + '?dates=' + espnDateStr(0) + extra;
+      const tomorrowUrl = baseUrl + '?dates=' + espnDateStr(1) + extra;
+
+      Promise.all([
+        fetch(todayUrl).then(r => r.json()).catch(() => ({ events: [] })),
+        fetch(tomorrowUrl).then(r => r.json()).catch(() => ({ events: [] })),
+      ]).then(([todayData, tmrwData]) => {
+        const todayGames = parseESPNGames(todayData, sport, 'Today');
+        const tmrwGames  = parseESPNGames(tmrwData,  sport, 'Tomorrow');
+        // Sort: upcoming (pre) first, then live (in), then finished (post) at bottom
+        const order = { pre: 0, in: 1, post: 2 };
+        const all = [...todayGames, ...tmrwGames].sort((a, b) => (order[a.state]||0) - (order[b.state]||0));
+        pickerCache[sport] = all;
+        currentGameList = all;
+        renderGameList(all, sport);
+      }).catch(() => {
+        list.innerHTML = '<div class="game-picker-empty">No ' + SPORT_CONFIG[sport].label + ' games found.</div>';
+      });
+    }
+
+    function parseESPNGames(data, sport, dayLabel) {
       return (data.events || []).map(e => {
         const comp  = e.competitions[0];
         const teams = comp.competitors;
@@ -3340,7 +3353,7 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
         const state  = comp.status.type.state || 'pre';
         let timeStr = detail;
         const m = detail.match(/(\d+:\d+\s*[AP]M\s*E[SD]T)/i);
-        if (m) timeStr = m[1].replace(/EST|EDT/gi, 'ET');
+        if (m) timeStr = (dayLabel ? dayLabel + ' · ' : '') + m[1].replace(/EST|EDT/gi, 'ET');
         return {
           sport,
           awayAbbr: away.team.abbreviation || '',
@@ -3371,7 +3384,7 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
         return '<div style="display:flex;justify-content:space-between;align-items:center;background:' + cardBg + ';border:' + cardBorder + ';border-radius:10px;padding:12px 16px;margin-bottom:8px;cursor:pointer;" onclick="' + fn + '">'
           + '<div style="flex:1;min-width:0;">'
           + '<div style="font-size:14px;font-weight:600;color:#f9fafb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + g.awayName + ' <span style="color:#6b7280;">@</span> ' + g.homeName + '</div>'
-          + '<div style="font-size:12px;color:#6b7280;margin-top:3px;">' + g.time + (g.state !== 'pre' ? ' &middot; <span style="color:#f59e0b;">Live</span>' : '') + '</div>'
+          + '<div style="font-size:12px;color:#6b7280;margin-top:3px;">' + g.time + (g.state === 'in' ? ' &middot; <span style="color:#ef4444;font-weight:700;">🔴 Live</span>' : g.state === 'post' ? ' &middot; <span style="color:#6b7280;">Final</span>' : '') + '</div>'
           + '</div>'
           + '<button onclick="event.stopPropagation();' + fn + '" style="margin-left:12px;padding:6px 12px;background:' + btnBg + ';border:1px solid rgba(0,232,122,0.4);border-radius:8px;color:' + btnColor + ';font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">' + btnLabel + '</button>'
           + '</div>';
