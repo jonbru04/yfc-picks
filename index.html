@@ -3589,6 +3589,8 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
         const rawBook = (odds.provider && odds.provider.name) ? odds.provider.name : 'DraftKings';
         const book = rawBook.replace('Draft Kings','DraftKings').replace('Fan Duel','FanDuel')
                             .replace('Caesars Sportsbook','Caesars').replace('bet365','Bet365');
+
+        // ── Schema A: flat (live / post-game) ──────────────────────────────
         const spread = odds.spread || 0;
         const total  = odds.overUnder || 0;
         const awO = odds.awayTeamOdds || {}, hmO = odds.homeTeamOdds || {};
@@ -3603,6 +3605,35 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
         if (total) {
           ov.push({ book, point: total, price: odds.overOdds  || -110 });
           un.push({ book, point: total, price: odds.underOdds || -110 });
+        }
+
+        // ── Schema B: nested pre-game (pointSpread / moneyline / total) ───
+        if (!spread && !total && !awO.moneyLine) {
+          const ps  = odds.pointSpread || {};
+          const ml  = odds.moneyline   || {};
+          const tot = odds.total       || {};
+          // Spread
+          const awPsLine = parseFloat(ps.away && ps.away.close && ps.away.close.line || ps.away && ps.away.open && ps.away.open.line || '0');
+          const hmPsLine = parseFloat(ps.home && ps.home.close && ps.home.close.line || ps.home && ps.home.open && ps.home.open.line || '0');
+          const awPsOdds = parseInt(ps.away && ps.away.close && ps.away.close.odds || '-110');
+          const hmPsOdds = parseInt(ps.home && ps.home.close && ps.home.close.odds || '-110');
+          if (awPsLine) { awSp.push({ book, point: awPsLine, price: awPsOdds }); }
+          if (hmPsLine) { hmSp.push({ book, point: hmPsLine, price: hmPsOdds }); }
+          // Moneyline
+          const awMlOdds = parseInt(ml.away && ml.away.close && ml.away.close.odds || '0');
+          const hmMlOdds = parseInt(ml.home && ml.home.close && ml.home.close.odds || '0');
+          if (awMlOdds) awML.push({ book, price: awMlOdds });
+          if (hmMlOdds) hmML.push({ book, price: hmMlOdds });
+          // Total
+          const ovRaw  = (tot.over  && tot.over.close  && tot.over.close.line)  || '';
+          const unRaw  = (tot.under && tot.under.close && tot.under.close.line) || '';
+          const ovLine = parseFloat(ovRaw.replace(/[ou]/i,''));
+          const ovOdds = parseInt(tot.over  && tot.over.close  && tot.over.close.odds  || '-110');
+          const unOdds = parseInt(tot.under && tot.under.close && tot.under.close.odds || '-110');
+          if (ovLine) {
+            ov.push({ book, point: ovLine, price: ovOdds });
+            un.push({ book, point: ovLine, price: unOdds });
+          }
         }
       });
       // If we got any real data, render it
