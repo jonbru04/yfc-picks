@@ -3351,9 +3351,15 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
         const home  = teams.find(t => t.homeAway === 'home') || teams[1];
         const detail = comp.status.type.shortDetail || '';
         const state  = comp.status.type.state || 'pre';
-        let timeStr = detail;
-        const m = detail.match(/(\d+:\d+\s*[AP]M\s*E[SD]T)/i);
-        if (m) timeStr = (dayLabel ? dayLabel + ' · ' : '') + m[1].replace(/EST|EDT/gi, 'ET');
+        let timeStr;
+        if (state === 'post') {
+          timeStr = 'Final';
+        } else if (state === 'in') {
+          timeStr = detail; // e.g. "Q3 4:22" or "Bottom 3rd"
+        } else {
+          const m = detail.match(/(\d+:\d+\s*[AP]M\s*E[SD]T)/i);
+          timeStr = m ? (dayLabel ? dayLabel + ' · ' : '') + m[1].replace(/EST|EDT/gi, 'ET') : detail;
+        }
         return {
           sport,
           awayAbbr: away.team.abbreviation || '',
@@ -3384,7 +3390,7 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
         return '<div style="display:flex;justify-content:space-between;align-items:center;background:' + cardBg + ';border:' + cardBorder + ';border-radius:10px;padding:12px 16px;margin-bottom:8px;cursor:pointer;" onclick="' + fn + '">'
           + '<div style="flex:1;min-width:0;">'
           + '<div style="font-size:14px;font-weight:600;color:#f9fafb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + g.awayName + ' <span style="color:#6b7280;">@</span> ' + g.homeName + '</div>'
-          + '<div style="font-size:12px;color:#6b7280;margin-top:3px;">' + g.time + (g.state === 'in' ? ' &middot; <span style="color:#ef4444;font-weight:700;">🔴 Live</span>' : g.state === 'post' ? ' &middot; <span style="color:#6b7280;">Final</span>' : '') + '</div>'
+          + '<div style="font-size:12px;color:#6b7280;margin-top:3px;">' + g.time + (g.state === 'in' ? ' &middot; <span style="color:#ef4444;font-weight:700;">🔴 Live</span>' : '') + '</div>'
           + '</div>'
           + '<button onclick="event.stopPropagation();' + fn + '" style="margin-left:12px;padding:6px 12px;background:' + btnBg + ';border:1px solid rgba(0,232,122,0.4);border-radius:8px;color:' + btnColor + ';font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">' + btnLabel + '</button>'
           + '</div>';
