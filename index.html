@@ -3689,34 +3689,47 @@ The sharp bettors aren't smarter pickers — they just shop better. Start there.
         ncaab:'basketball/mens-college-basketball', ncaabaseball:'baseball/college-baseball',
         ncaahockey:'hockey/mens-college-hockey', ncaalacrosse:'lacrosse/mens-college-lacrosse' };
       const path = paths[g.sport] || 'basketball/nba';
-      const url  = 'https://site.api.espn.com/apis/site/v2/sports/' + path + '/scoreboard'
-                 + (g.sport === 'ncaab' ? '?groups=50&limit=300' : '');
-      fetch(url)
-        .then(r => r.json())
-        .then(async data => {
-          const ev = (data.events || []).find(e => {
-            const aw = e.competitions[0].competitors.find(t => t.homeAway === 'away');
-            const hm = e.competitions[0].competitors.find(t => t.homeAway === 'home');
-            return aw && hm
-              && (aw.team.abbreviation === g.awayAbbr || aw.team.shortDisplayName === g.awayName)
-              && (hm.team.abbreviation === g.homeAbbr || hm.team.shortDisplayName === g.homeName);
-          });
-          if (!ev) { showManualEntry(g); return; }
+      const base = 'https://site.api.espn.com/apis/site/v2/sports/' + path + '/scoreboard';
+      const ncaabExtra = g.sport === 'ncaab' ? '&groups=50&limit=500' : '&limit=300';
 
-          // Step 1: try site-scoreboard odds (fast, usually has big games)
-          const oddsArr = ev.competitions[0].odds || [];
-          if (oddsArr.length && parseESPNOddsItems(oddsArr, g)) return;
+      // Always pass explicit dates so ESPN returns the full day's slate (not just 5 default games)
+      const today    = espnDateStr(0);
+      const tomorrow = espnDateStr(1);
+      const urlToday = base + '?dates=' + today    + ncaabExtra;
+      const urlTomor = base + '?dates=' + tomorrow + ncaabExtra;
 
-          // Step 2: try ESPN core odds API (has odds for more games incl. smaller college)
-          const evId   = ev.id;
-          const compId = ev.competitions[0].id || ev.id;
-          const gotLines = await tryESPNCoreOdds(g, evId, compId);
-          if (gotLines) return;
+      function findEvent(events) {
+        return (events || []).find(e => {
+          const aw = e.competitions[0].competitors.find(t => t.homeAway === 'away');
+          const hm = e.competitions[0].competitors.find(t => t.homeAway === 'home');
+          return aw && hm
+            && (aw.team.abbreviation === g.awayAbbr || aw.team.shortDisplayName === g.awayName)
+            && (hm.team.abbreviation === g.homeAbbr || hm.team.shortDisplayName === g.homeName);
+        });
+      }
 
-          // Step 3: no automated lines available — show manual entry
-          showManualEntry(g);
-        })
-        .catch(() => showManualEntry(g));
+      // Fetch today + tomorrow in parallel, merge events, find the game
+      Promise.all([
+        fetch(urlToday).then(r => r.json()).catch(() => ({ events: [] })),
+        fetch(urlTomor).then(r => r.json()).catch(() => ({ events: [] }))
+      ]).then(async ([d1, d2]) => {
+        const allEvents = (d1.events || []).concat(d2.events || []);
+        const ev = findEvent(allEvents);
+        if (!ev) { showManualEntry(g); return; }
+
+        // Step 1: site-scoreboard odds (fast path)
+        const oddsArr = ev.competitions[0].odds || [];
+        if (oddsArr.length && parseESPNOddsItems(oddsArr, g)) return;
+
+        // Step 2: ESPN core odds API (smaller college games)
+        const evId   = ev.id;
+        const compId = ev.competitions[0].id || ev.id;
+        const gotLines = await tryESPNCoreOdds(g, evId, compId);
+        if (gotLines) return;
+
+        // Step 3: no automated lines available
+        showManualEntry(g);
+      }).catch(() => showManualEntry(g));
     }
 
     function showManualEntry(g) {
